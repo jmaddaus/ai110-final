@@ -61,29 +61,20 @@ Prompts:
 
 ## 6. Limitations and Bias 
 
-Where the system struggles or behaves unfairly. 
-
-Prompts:  
-
-- Features it does not consider  
-- Genres or moods that are underrepresented  
-- Cases where the system overfits to one preference  
-- Ways the scoring might unintentionally favor some users  
+- Genre is weighted at 2.0 points, which is more than mood and energy combined in some cases. This means a song that matches genre but has the wrong mood can still rank above a song that nails the vibe but is labeled as a different genre. For example, Gym Hero (pop, intense) ranked above Rooftop Lights (indie pop, happy) for a user who wanted happy pop.
+- The catalog is small (18 songs) and some genres only have one entry. A classical fan or a metal fan basically gets one result and then a bunch of unrelated filler.
+- The system has no way for a user to say "I care about mood more than genre." Everyone gets the same weight formula.
+- It does not consider lyrics, artist popularity, release year, or anything beyond the basic CSV attributes. Two songs with similar numbers could sound nothing alike in practice.  
 
 ---
 
 ## 7. Evaluation  
 
-How you checked whether the recommender behaved as expected. 
+I tested the system with four user profiles: Happy Pop Fan (pop, happy, energy 0.8), Chill Lofi Listener (lofi, chill, energy 0.4), Intense Rock Fan (rock, intense, energy 0.9), and Relaxed Acoustic (folk, relaxed, energy 0.3). For each one I checked whether the top 5 results felt like reasonable picks.
 
-Prompts:  
+Most of the results made sense. The lofi listener got lofi and ambient tracks, the rock fan got Storm Runner at the top, and the acoustic listener got Campfire Songs with a perfect score. The one thing that surprised me was Gym Hero showing up at #2 for the happy pop fan. It is pop, but its mood is "intense," not "happy." It ranked that high purely because of the genre match being worth so many points.
 
-- Which user profiles you tested  
-- What you looked for in the recommendations  
-- What surprised you  
-- Any simple tests or comparisons you ran  
-
-No need for numeric metrics unless you created some.
+I also ran a weight experiment where I halved genre (2.0 to 1.0) and doubled energy (1.0 to 2.0). That fixed the Gym Hero issue for the pop fan, but did not change the top result for any profile. The tests in test_recommender.py also pass, confirming the OOP implementation sorts correctly.
 
 ---
 

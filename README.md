@@ -90,25 +90,22 @@ You can add more tests in `tests/test_recommender.py`.
 
 ## Experiments You Tried
 
-Use this section to document the experiments you ran. For example:
+I tested the system with four different user profiles: Happy Pop Fan, Chill Lofi Listener, Intense Rock Fan, and Relaxed Acoustic. Each one returned results that mostly made sense. The pop fan got Sunrise City at the top, the lofi listener got Midnight Coding, the rock fan got Storm Runner, and the acoustic listener got Campfire Songs.
 
-- What happened when you changed the weight on genre from 2.0 to 0.5
-- What happened when you added tempo or valence to the score
-- How did your system behave for different types of users
+I then ran an experiment where I halved the genre weight (from 2.0 to 1.0) and doubled the energy weight (from 1.0 to 2.0). The biggest change was in the Happy Pop Fan results. With the original weights, Gym Hero (pop, intense) ranked #2 because it matched on genre. After the shift, Rooftop Lights (indie pop, happy) jumped above it because its mood and energy were a better fit, even though its genre was not an exact match. That result actually felt more accurate to me, since someone who wants "happy pop" probably cares more about the vibe than the exact genre label.
+
+The other profiles did not change as much. The top result stayed the same across all of them.
 
 ---
 
 ## Limitations and Risks
 
-Summarize some limitations of your recommender.
+- The catalog only has 18 songs, so some genres (like rock or classical) only have one song. That means the system cannot really give variety for those users.
+- Genre matching is worth the most points, which can push songs with the wrong mood or energy above songs that actually fit the vibe better.
+- The system does not consider lyrics, language, or anything about the actual sound of the music. Two songs labeled "happy" could sound completely different.
+- It treats every user the same way. Someone who cares mostly about mood has no way to tell the system that genre does not matter to them.
 
-Examples:
-
-- It only works on a tiny catalog
-- It does not understand lyrics or language
-- It might over favor one genre or mood
-
-You will go deeper on this in your model card.
+More details in the [model card](model_card.md).
 
 ---
 
