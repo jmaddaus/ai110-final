@@ -24,17 +24,39 @@ PROFILES = {
 
 
 def print_recommendations(profile_name, user_prefs, songs, mode="balanced", diversity=False, k=5):
-    """Print recommendations for a single user profile."""
+    """Print recommendations as a formatted table."""
     div_label = " +diversity" if diversity else ""
     print(f"\n--- {profile_name} (mode: {mode}{div_label}) ---")
     print(f"Preferences: {user_prefs}\n")
 
     recommendations = recommend_songs(user_prefs, songs, k=k, mode=mode, diversity=diversity)
+
+    # Build table rows
+    headers = ["#", "Title", "Artist", "Score", "Reasons"]
+    rows = []
     for i, rec in enumerate(recommendations, 1):
         song, score, explanation = rec
-        print(f"  {i}. {song['title']} by {song['artist']} - Score: {score:.2f}")
-        print(f"     Reasons: {explanation}")
-        print()
+        rows.append([str(i), song['title'], song['artist'], f"{score:.2f}", explanation])
+
+    # Calculate column widths
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for j, cell in enumerate(row):
+            widths[j] = max(widths[j], len(cell))
+
+    # Print table
+    def format_row(cells):
+        parts = [cells[j].ljust(widths[j]) for j in range(len(cells))]
+        return "  " + " | ".join(parts)
+
+    header_line = format_row(headers)
+    separator = "  " + "-+-".join("-" * w for w in widths)
+
+    print(header_line)
+    print(separator)
+    for row in rows:
+        print(format_row(row))
+    print()
 
 
 def pick_mode():

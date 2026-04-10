@@ -147,3 +147,7 @@ Added four scoring modes that change how much each factor is worth: balanced (th
 
 Added a diversity toggle (press "d" in the CLI) that penalizes songs if the same artist or genre keeps showing up in the results. If an artist already appeared in the picks, the next song by them gets -1.5 points. If the same genre has already been picked twice, any additional songs from that genre get -0.5. The system builds the list one song at a time, re-evaluating penalties at each step so the best adjusted score always wins. This helps prevent cases where, for example, all five recommendations are lofi tracks just because the user likes chill music.
 
+### Challenge 4: Visual Summary Table
+
+Replaced the plain text output with a formatted ASCII table that shows rank, title, artist, score, and reasons in aligned columns. The column widths adjust automatically based on the data so everything lines up regardless of how long the song titles or reason strings are. No external libraries needed.
+
