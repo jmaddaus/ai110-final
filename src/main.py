@@ -1,6 +1,6 @@
 """Command line runner for the Music Recommender Simulation."""
 
-from src.recommender import load_songs, recommend_songs
+from src.recommender import load_songs, recommend_songs, SCORING_MODES
 
 
 PROFILES = {
@@ -23,17 +23,33 @@ PROFILES = {
 }
 
 
-def print_recommendations(profile_name, user_prefs, songs, k=5):
+def print_recommendations(profile_name, user_prefs, songs, mode="balanced", k=5):
     """Print recommendations for a single user profile."""
-    print(f"\n--- {profile_name} ---")
+    print(f"\n--- {profile_name} (mode: {mode}) ---")
     print(f"Preferences: {user_prefs}\n")
 
-    recommendations = recommend_songs(user_prefs, songs, k=k)
+    recommendations = recommend_songs(user_prefs, songs, k=k, mode=mode)
     for i, rec in enumerate(recommendations, 1):
         song, score, explanation = rec
         print(f"  {i}. {song['title']} by {song['artist']} - Score: {score:.2f}")
         print(f"     Reasons: {explanation}")
         print()
+
+
+def pick_mode():
+    """Let the user pick a scoring mode."""
+    print("Scoring modes:")
+    modes = list(SCORING_MODES.keys())
+    for i, mode in enumerate(modes, 1):
+        weights = SCORING_MODES[mode]
+        print(f"  {i}. {mode} (genre={weights['genre']}, mood={weights['mood']}, energy={weights['energy']})")
+    print()
+
+    while True:
+        choice = input(f"Pick a mode (1-{len(modes)}): ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(modes):
+            return modes[int(choice) - 1]
+        print("Invalid choice, try again.\n")
 
 
 def show_menu():
@@ -51,19 +67,26 @@ def main() -> None:
     songs = load_songs("data/songs.csv")
     print(f"Loaded {len(songs)} songs\n")
 
+    mode = "balanced"
+
     while True:
         show_menu()
-        choice = input("Pick a profile (1-6): ").strip()
+        print(f"  Current mode: {mode}")
+        print("  (Type 'm' to change mode)\n")
+        choice = input("Pick a profile (1-6) or 'm': ").strip().lower()
 
         if choice == "6":
             print("Goodbye!")
             break
+        elif choice == "m":
+            mode = pick_mode()
+            print(f"Switched to {mode} mode.\n")
         elif choice == "5":
             for name, prefs in PROFILES.values():
-                print_recommendations(name, prefs, songs)
+                print_recommendations(name, prefs, songs, mode=mode)
         elif choice in PROFILES:
             name, prefs = PROFILES[choice]
-            print_recommendations(name, prefs, songs)
+            print_recommendations(name, prefs, songs, mode=mode)
         else:
             print("Invalid choice, try again.\n")
 

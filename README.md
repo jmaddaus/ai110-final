@@ -139,3 +139,7 @@ The bias part was interesting. Just by making genre worth more points than mood,
 
 Added five new attributes to every song in the catalog: popularity (0-100), release_decade, mood_tag (specific tags like "euphoric", "nostalgic", "aggressive"), instrumentalness (0.0-1.0), and loudness (0.0-1.0). Each one has its own scoring rule. Mood tag match gives +0.75, decade match gives +0.5, and instrumentalness/loudness each give up to +0.5 based on how close the song is to the user's target. The new features give the system more to work with when differentiating songs that would have tied before. For example, Rooftop Lights now scores higher than Gym Hero for the Happy Pop Fan because its mood tag and loudness are a better fit.
 
+### Challenge 2: Multiple Scoring Modes
+
+Added four scoring modes that change how much each factor is worth: balanced (the default), genre-first, mood-first, and energy-focused. You can switch between them from the CLI menu by pressing "m". Genre-first cranks genre up to 4.0 and lowers everything else, mood-first makes mood worth 3.0, and energy-focused makes energy worth up to 3.0. This lets you see how the same profile gets different results depending on which factor the system cares about most. It also makes the earlier weight experiment from Phase 4 something you can try on the fly without editing code.
+
