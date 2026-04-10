@@ -1,0 +1,17 @@
+flowchart TD
+    A[User Preferences\ngenre, mood, energy] --> B[Load Songs from CSV]
+    B --> C[Loop Through Every Song]
+    C --> D{Genre Match?}
+    D -- Yes --> E[+2.0 points]
+    D -- No --> F[+0 points]
+    E --> G{Mood Match?}
+    F --> G
+    G -- Yes --> H[+1.0 point]
+    G -- No --> I[+0 points]
+    H --> J[Calculate Energy Similarity\n1.0 - abs difference]
+    I --> J
+    J --> K[Add Energy Score\nup to +1.0]
+    K --> L[Store Final Score + Reasons]
+    L --> C
+    L --> M[Sort All Songs by Score\nHighest to Lowest]
+    M --> N[Return Top K Recommendations\nwith Explanations]
