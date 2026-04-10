@@ -11,23 +11,45 @@ Your goal is to:
 - Evaluate what your system gets right and wrong
 - Reflect on how this mirrors real world AI recommenders
 
-Replace this paragraph with your own summary of what your version does.
+This is a simple music recommender that takes a user's preferences (like genre, mood, and energy level) and scores songs from a CSV catalog to find the best matches. It uses content-based filtering, meaning it looks at the attributes of each song rather than tracking what other users listened to. The output is a ranked list of recommendations with explanations for why each song was picked.
 
 ---
 
 ## How The System Works
 
-Explain your design in plain language.
+Real streaming platforms like Spotify use two main approaches to recommend music. Collaborative filtering looks at what similar users listened to and assumes you might like the same things. Content-based filtering looks at the actual attributes of songs (genre, energy, mood, etc.) and tries to match them to your preferences. Our system uses content-based filtering since we don't have real user data to work with.
 
-Some prompts to answer:
+### Song Features
 
-- What features does each `Song` use in your system
-  - For example: genre, mood, energy, tempo
-- What information does your `UserProfile` store
-- How does your `Recommender` compute a score for each song
-- How do you choose which songs to recommend
+Each song in the catalog has these attributes:
+- **genre** -- the style of the song (pop, lofi, rock, etc.)
+- **mood** -- the general feeling (happy, chill, intense, etc.)
+- **energy** -- how intense the song feels (0.0 to 1.0)
+- **tempo_bpm** -- beats per minute
+- **valence** -- how positive the song sounds (0.0 to 1.0)
+- **danceability** -- how easy it is to dance to (0.0 to 1.0)
+- **acousticness** -- how acoustic vs electronic it sounds (0.0 to 1.0)
 
-You can include a simple diagram or bullet list if helpful.
+### User Profile
+
+The `UserProfile` stores a user's taste preferences:
+- **favorite_genre** -- the genre they prefer
+- **favorite_mood** -- the mood they gravitate toward
+- **target_energy** -- their ideal energy level (0.0 to 1.0)
+- **likes_acoustic** -- whether they prefer acoustic-sounding music
+
+### Algorithm Recipe
+
+The scoring logic works like this:
+- **+2.0 points** for a genre match
+- **+1.0 point** for a mood match
+- **Up to +1.0 points** for energy similarity (the closer the song's energy is to the user's target, the more points)
+
+After every song gets a score, we sort them highest to lowest and return the top results.
+
+### Expected Biases
+
+This system will probably lean too heavily on genre since it is worth the most points. A song that matches genre but has the wrong mood and energy could still beat a song that nails everything except genre. The catalog is also pretty small, so some genres only have one or two songs to choose from.
 
 ---
 
