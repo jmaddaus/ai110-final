@@ -143,3 +143,7 @@ Added five new attributes to every song in the catalog: popularity (0-100), rele
 
 Added four scoring modes that change how much each factor is worth: balanced (the default), genre-first, mood-first, and energy-focused. You can switch between them from the CLI menu by pressing "m". Genre-first cranks genre up to 4.0 and lowers everything else, mood-first makes mood worth 3.0, and energy-focused makes energy worth up to 3.0. This lets you see how the same profile gets different results depending on which factor the system cares about most. It also makes the earlier weight experiment from Phase 4 something you can try on the fly without editing code.
 
+### Challenge 3: Diversity Penalty
+
+Added a diversity toggle (press "d" in the CLI) that penalizes songs if the same artist or genre keeps showing up in the results. If an artist already appeared in the picks, the next song by them gets -1.5 points. If the same genre has already been picked twice, any additional songs from that genre get -0.5. The system builds the list one song at a time, re-evaluating penalties at each step so the best adjusted score always wins. This helps prevent cases where, for example, all five recommendations are lofi tracks just because the user likes chill music.
+

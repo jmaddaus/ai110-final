@@ -23,12 +23,13 @@ PROFILES = {
 }
 
 
-def print_recommendations(profile_name, user_prefs, songs, mode="balanced", k=5):
+def print_recommendations(profile_name, user_prefs, songs, mode="balanced", diversity=False, k=5):
     """Print recommendations for a single user profile."""
-    print(f"\n--- {profile_name} (mode: {mode}) ---")
+    div_label = " +diversity" if diversity else ""
+    print(f"\n--- {profile_name} (mode: {mode}{div_label}) ---")
     print(f"Preferences: {user_prefs}\n")
 
-    recommendations = recommend_songs(user_prefs, songs, k=k, mode=mode)
+    recommendations = recommend_songs(user_prefs, songs, k=k, mode=mode, diversity=diversity)
     for i, rec in enumerate(recommendations, 1):
         song, score, explanation = rec
         print(f"  {i}. {song['title']} by {song['artist']} - Score: {score:.2f}")
@@ -68,12 +69,14 @@ def main() -> None:
     print(f"Loaded {len(songs)} songs\n")
 
     mode = "balanced"
+    diversity = False
 
     while True:
         show_menu()
-        print(f"  Current mode: {mode}")
-        print("  (Type 'm' to change mode)\n")
-        choice = input("Pick a profile (1-6) or 'm': ").strip().lower()
+        div_status = "on" if diversity else "off"
+        print(f"  Current mode: {mode} | Diversity: {div_status}")
+        print("  (Type 'm' to change mode, 'd' to toggle diversity)\n")
+        choice = input("Pick a profile (1-6), 'm', or 'd': ").strip().lower()
 
         if choice == "6":
             print("Goodbye!")
@@ -81,12 +84,15 @@ def main() -> None:
         elif choice == "m":
             mode = pick_mode()
             print(f"Switched to {mode} mode.\n")
+        elif choice == "d":
+            diversity = not diversity
+            print(f"Diversity penalty {'enabled' if diversity else 'disabled'}.\n")
         elif choice == "5":
             for name, prefs in PROFILES.values():
-                print_recommendations(name, prefs, songs, mode=mode)
+                print_recommendations(name, prefs, songs, mode=mode, diversity=diversity)
         elif choice in PROFILES:
             name, prefs = PROFILES[choice]
-            print_recommendations(name, prefs, songs, mode=mode)
+            print_recommendations(name, prefs, songs, mode=mode, diversity=diversity)
         else:
             print("Invalid choice, try again.\n")
 

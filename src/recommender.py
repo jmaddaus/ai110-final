@@ -174,13 +174,50 @@ def score_song(user_prefs: Dict, song: Dict, mode: str = "balanced") -> Tuple[fl
     return (score, reasons)
 
 
-def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5, mode: str = "balanced") -> List[Tuple[Dict, float, str]]:
+def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5, mode: str = "balanced",
+                     diversity: bool = False) -> List[Tuple[Dict, float, str]]:
     """Score all songs and return the top k sorted by score."""
     scored = []
     for song in songs:
         song_score, reasons = score_song(user_prefs, song, mode=mode)
-        explanation = ", ".join(reasons)
-        scored.append((song, song_score, explanation))
+        scored.append((song, song_score, reasons))
 
     scored.sort(key=lambda x: x[1], reverse=True)
-    return scored[:k]
+
+    if not diversity:
+        return [(s, sc, ", ".join(r)) for s, sc, r in scored[:k]]
+
+    # Greedy selection: pick the best remaining song each round,
+    # penalizing repeats of artists or genres already chosen.
+    remaining = list(scored)
+    results = []
+    picked_artists = []
+    picked_genres = []
+
+    for _ in range(min(k, len(remaining))):
+        best_idx = 0
+        best_adj = -999.0
+        best_reasons = []
+
+        for i, (song, base_score, reasons) in enumerate(remaining):
+            adj = base_score
+            adj_reasons = list(reasons)
+
+            if song['artist'] in picked_artists:
+                adj -= 1.5
+                adj_reasons.append("repeat artist (-1.5)")
+            if picked_genres.count(song['genre']) >= 2:
+                adj -= 0.5
+                adj_reasons.append("too many from same genre (-0.5)")
+
+            if adj > best_adj:
+                best_adj = adj
+                best_idx = i
+                best_reasons = adj_reasons
+
+        song, _, _ = remaining.pop(best_idx)
+        picked_artists.append(song['artist'])
+        picked_genres.append(song['genre'])
+        results.append((song, best_adj, ", ".join(best_reasons)))
+
+    return results
