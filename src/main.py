@@ -4,10 +4,22 @@ from src.recommender import load_songs, recommend_songs
 
 
 PROFILES = {
-    "1": ("Happy Pop Fan", {"genre": "pop", "mood": "happy", "energy": 0.8}),
-    "2": ("Chill Lofi Listener", {"genre": "lofi", "mood": "chill", "energy": 0.4}),
-    "3": ("Intense Rock Fan", {"genre": "rock", "mood": "intense", "energy": 0.9}),
-    "4": ("Relaxed Acoustic", {"genre": "folk", "mood": "relaxed", "energy": 0.3}),
+    "1": ("Happy Pop Fan", {
+        "genre": "pop", "mood": "happy", "energy": 0.8,
+        "mood_tag": "euphoric", "decade": "2020s", "loudness": 0.6,
+    }),
+    "2": ("Chill Lofi Listener", {
+        "genre": "lofi", "mood": "chill", "energy": 0.4,
+        "mood_tag": "nostalgic", "instrumentalness": 0.7, "loudness": 0.3,
+    }),
+    "3": ("Intense Rock Fan", {
+        "genre": "rock", "mood": "intense", "energy": 0.9,
+        "mood_tag": "aggressive", "decade": "2010s", "loudness": 0.85,
+    }),
+    "4": ("Relaxed Acoustic", {
+        "genre": "folk", "mood": "relaxed", "energy": 0.3,
+        "mood_tag": "warm", "instrumentalness": 0.8, "loudness": 0.2,
+    }),
 }
 
 

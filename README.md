@@ -131,3 +131,11 @@ Building this recommender showed me that recommendations are really just math on
 
 The bias part was interesting. Just by making genre worth more points than mood, the system started recommending intense songs to people who wanted something happy, as long as the genre was right. In a real product, that kind of thing could push users into a narrow bubble where they only hear one type of music because the algorithm keeps rewarding the same label over and over. It made me think about how much power these weight decisions have, even in a system this small.
 
+---
+
+## Optional Extensions
+
+### Challenge 1: Advanced Song Features
+
+Added five new attributes to every song in the catalog: popularity (0-100), release_decade, mood_tag (specific tags like "euphoric", "nostalgic", "aggressive"), instrumentalness (0.0-1.0), and loudness (0.0-1.0). Each one has its own scoring rule. Mood tag match gives +0.75, decade match gives +0.5, and instrumentalness/loudness each give up to +0.5 based on how close the song is to the user's target. The new features give the system more to work with when differentiating songs that would have tied before. For example, Rooftop Lights now scores higher than Gym Hero for the Happy Pop Fan because its mood tag and loudness are a better fit.
+

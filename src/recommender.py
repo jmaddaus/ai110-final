@@ -16,6 +16,11 @@ class Song:
     valence: float
     danceability: float
     acousticness: float
+    popularity: int = 50
+    release_decade: str = "2020s"
+    mood_tag: str = ""
+    instrumentalness: float = 0.5
+    loudness: float = 0.5
 
 
 @dataclass
@@ -25,6 +30,10 @@ class UserProfile:
     favorite_mood: str
     target_energy: float
     likes_acoustic: bool
+    preferred_mood_tag: Optional[str] = None
+    preferred_decade: Optional[str] = None
+    target_instrumentalness: Optional[float] = None
+    target_loudness: Optional[float] = None
 
 
 class Recommender:
@@ -50,6 +59,30 @@ class Recommender:
         energy_score = 1.0 - energy_diff
         score += energy_score
         reasons.append(f"energy similarity (+{energy_score:.2f})")
+
+        # Mood tag match
+        if user.preferred_mood_tag and song.mood_tag == user.preferred_mood_tag:
+            score += 0.75
+            reasons.append("mood tag match (+0.75)")
+
+        # Decade match
+        if user.preferred_decade and song.release_decade == user.preferred_decade:
+            score += 0.5
+            reasons.append("decade match (+0.5)")
+
+        # Instrumentalness similarity
+        if user.target_instrumentalness is not None:
+            inst_diff = abs(song.instrumentalness - user.target_instrumentalness)
+            inst_score = (1.0 - inst_diff) * 0.5
+            score += inst_score
+            reasons.append(f"instrumentalness similarity (+{inst_score:.2f})")
+
+        # Loudness similarity
+        if user.target_loudness is not None:
+            loud_diff = abs(song.loudness - user.target_loudness)
+            loud_score = (1.0 - loud_diff) * 0.5
+            score += loud_score
+            reasons.append(f"loudness similarity (+{loud_score:.2f})")
 
         return (score, reasons)
 
@@ -77,6 +110,9 @@ def load_songs(csv_path: str) -> List[Dict]:
             row['valence'] = float(row['valence'])
             row['danceability'] = float(row['danceability'])
             row['acousticness'] = float(row['acousticness'])
+            row['popularity'] = int(row['popularity'])
+            row['instrumentalness'] = float(row['instrumentalness'])
+            row['loudness'] = float(row['loudness'])
             songs.append(row)
     return songs
 
@@ -99,6 +135,30 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
         energy_score = 1.0 - energy_diff
         score += energy_score
         reasons.append(f"energy similarity (+{energy_score:.2f})")
+
+    # Mood tag match
+    if 'mood_tag' in user_prefs and song.get('mood_tag') == user_prefs['mood_tag']:
+        score += 0.75
+        reasons.append("mood tag match (+0.75)")
+
+    # Decade match
+    if 'decade' in user_prefs and song.get('release_decade') == user_prefs['decade']:
+        score += 0.5
+        reasons.append("decade match (+0.5)")
+
+    # Instrumentalness similarity
+    if 'instrumentalness' in user_prefs:
+        inst_diff = abs(song.get('instrumentalness', 0.5) - user_prefs['instrumentalness'])
+        inst_score = (1.0 - inst_diff) * 0.5
+        score += inst_score
+        reasons.append(f"instrumentalness similarity (+{inst_score:.2f})")
+
+    # Loudness similarity
+    if 'loudness' in user_prefs:
+        loud_diff = abs(song.get('loudness', 0.5) - user_prefs['loudness'])
+        loud_score = (1.0 - loud_diff) * 0.5
+        score += loud_score
+        reasons.append(f"loudness similarity (+{loud_score:.2f})")
 
     return (score, reasons)
 
