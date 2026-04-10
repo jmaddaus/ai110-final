@@ -111,14 +111,11 @@ More details in the [model card](model_card.md).
 
 ## Reflection
 
-Read and complete `model_card.md`:
-
 [**Model Card**](model_card.md)
 
-Write 1 to 2 paragraphs here about what you learned:
+Building this recommender showed me that recommendations are really just math on top of labels. The system does not actually listen to music or understand what sounds good together. It just checks whether the genre and mood strings match and how close the energy numbers are. That is enough to produce results that feel reasonable most of the time, but it also means the system is only as good as the data and the weights you give it.
 
-- about how recommenders turn data into predictions
-- about where bias or unfairness could show up in systems like this
+The bias part was interesting. Just by making genre worth more points than mood, the system started recommending intense songs to people who wanted something happy, as long as the genre was right. In a real product, that kind of thing could push users into a narrow bubble where they only hear one type of music because the algorithm keeps rewarding the same label over and over. It made me think about how much power these weight decisions have, even in a system this small.
 
 
 ---

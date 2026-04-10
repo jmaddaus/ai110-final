@@ -2,60 +2,34 @@
 
 ## 1. Model Name  
 
-Give your model a short, descriptive name.  
-Example: **VibeFinder 1.0**  
+**VibeFinder 1.0**  
 
 ---
 
 ## 2. Intended Use  
 
-Describe what your recommender is designed to do and who it is for. 
-
-Prompts:  
-
-- What kind of recommendations does it generate  
-- What assumptions does it make about the user  
-- Is this for real users or classroom exploration  
+This system suggests the top 5 songs from a small catalog based on a user's preferred genre, mood, and energy level. It assumes the user knows what genre and mood they are in the mood for and can pick a target energy level between 0 and 1. This is a classroom project for learning how recommender systems work. It is not meant for real users or production use.  
 
 ---
 
 ## 3. How the Model Works  
 
-Explain your scoring approach in simple language.  
-
-Prompts:  
-
-- What features of each song are used (genre, energy, mood, etc.)  
-- What user preferences are considered  
-- How does the model turn those into a score  
-- What changes did you make from the starter logic  
-
-Avoid code here. Pretend you are explaining the idea to a friend who does not program.
+The system goes through every song in the catalog and gives each one a score based on how well it matches what the user wants. If the song's genre matches the user's favorite genre, it gets 2 points. If the mood matches, it gets 1 point. Then it looks at how close the song's energy level is to what the user asked for. If the energy is a perfect match, that is another full point. If it is far off, that part of the score is lower. After scoring every song, the system sorts them from highest to lowest and shows the top results along with the reasons each song scored the way it did.
 
 ---
 
 ## 4. Data  
 
-Describe the dataset the model uses.  
-
-Prompts:  
-
-- How many songs are in the catalog  
-- What genres or moods are represented  
-- Did you add or remove data  
-- Are there parts of musical taste missing in the dataset  
+The catalog has 18 songs in data/songs.csv. The starter file had 10 and I added 8 more to cover genres that were missing. The genres now include pop, lofi, rock, ambient, jazz, synthwave, indie pop, electronic, country, metal, r&b, hip-hop, classical, and folk. Moods range from happy and chill to intense, sad, romantic, and confident. Each song also has numerical attributes for energy, tempo, valence, danceability, and acousticness on a 0 to 1 scale (except tempo which is in BPM). The dataset is still pretty small and some genres only have one song, so it does not represent real musical variety very well.  
 
 ---
 
 ## 5. Strengths  
 
-Where does your system seem to work well  
-
-Prompts:  
-
-- User types for which it gives reasonable results  
-- Any patterns you think your scoring captures correctly  
-- Cases where the recommendations matched your intuition  
+- When a user's preferences line up cleanly with a song in the catalog (like the Relaxed Acoustic profile getting Campfire Songs), the system gives a confident and correct answer.
+- The explanation output is useful. You can see exactly why each song scored the way it did, which makes it easy to understand and debug.
+- The lofi and pop profiles both returned results that felt right. The top picks matched what you would expect someone with those preferences to want to hear.
+- The system is simple enough that you can predict what it will do just by looking at the weights, which is a nice property for something meant to be transparent.  
 
 ---
 
@@ -80,23 +54,15 @@ I also ran a weight experiment where I halved genre (2.0 to 1.0) and doubled ene
 
 ## 8. Future Work  
 
-Ideas for how you would improve the model next.  
-
-Prompts:  
-
-- Additional features or preferences  
-- Better ways to explain recommendations  
-- Improving diversity among the top results  
-- Handling more complex user tastes  
+- Let users set their own weights so they can tell the system whether they care more about genre, mood, or energy.
+- Add a diversity penalty so the top results do not all come from the same genre or artist.
+- Include more song attributes like popularity, release year, or detailed mood tags to give the scoring more to work with.
+- Build a way to switch between different scoring strategies (like a "genre-first" mode vs a "mood-first" mode) instead of having one fixed formula.  
 
 ---
 
 ## 9. Personal Reflection  
 
-A few sentences about your experience.  
+The biggest thing I learned is how much the weights matter. A small change in how much genre is worth compared to energy completely changed which songs showed up for certain profiles. It made me realize that when Spotify or YouTube recommends something, there are people making those same kinds of decisions about what to prioritize, and those choices shape what millions of people end up listening to.
 
-Prompts:  
-
-- What you learned about recommender systems  
-- Something unexpected or interesting you discovered  
-- How this changed the way you think about music recommendation apps  
+I was also surprised by how a system this simple can still produce results that feel like real recommendations. When the lofi profile got back a list of chill, low-energy tracks, it genuinely felt like something a music app would suggest. But at the same time, it is easy to see the cracks. The system does not really understand music. It just matches labels and numbers. A human would know that "Gym Hero" is not a good pick for someone who wants happy pop, but the algorithm cannot tell the difference because the genre label matches.  
