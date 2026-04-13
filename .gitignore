@@ -13,3 +13,15 @@ venv/
 
 # Pytest cache
 .pytest_cache/
+
+# Environment variables (API keys)
+.env
+
+# Logs
+logs/
+
+# Cached API responses
+data/lastfm_cache/
+
+# Raw Kaggle download (large)
+data/raw_kaggle.csv
