@@ -74,23 +74,25 @@ This system will probably lean too heavily on genre since it is worth the most p
 pip install -r requirements.txt
 ```
 
-3. Run the app:
+3. Prepare the catalog:
 
 ```bash
-python -m src.main
+python -m scripts.prepare_catalog
 ```
 
-![CLI Menu](screenshots/CLI-test.png)
+4. Run the app:
+
+```bash
+streamlit run app.py
+```
 
 ### Running Tests
 
-Run the starter tests with:
+Run tests with:
 
 ```bash
 pytest
 ```
-
-You can add more tests in `tests/test_recommender.py`.
 
 ---
 

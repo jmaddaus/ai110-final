@@ -1,7 +1,7 @@
-"""Clean and prepare the Kaggle Spotify Tracks Dataset.
+"""Clean and prepare the Spotify Tracks Dataset.
 
 Usage:
-    python -m scripts.prepare_catalog --input data/raw_kaggle.csv --output data/catalog.csv
+    python -m scripts.prepare_catalog --input data/spotify-tracks.csv --output data/catalog.csv
 
 Steps:
     1. Load raw CSV
@@ -50,9 +50,13 @@ OUTPUT_COLUMNS: list[str] = [
 
 
 def load_raw(path: str) -> pd.DataFrame:
-    """Load the raw Kaggle CSV."""
-    logger.info("Loading raw Kaggle data from %s", path)
+    """Load the raw Spotify tracks CSV."""
+    logger.info("Loading raw data from %s", path)
     df = pd.read_csv(path)
+    # Drop unnamed index column if present
+    unnamed_cols = [c for c in df.columns if c.startswith("Unnamed")]
+    if unnamed_cols:
+        df = df.drop(columns=unnamed_cols)
     logger.info("Loaded %d rows, %d columns", len(df), len(df.columns))
     return df
 
@@ -118,11 +122,11 @@ def main() -> None:
     """Entry point: parse args, run pipeline, log summary stats."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-    parser = argparse.ArgumentParser(description="Prepare the Kaggle Spotify catalog")
+    parser = argparse.ArgumentParser(description="Prepare the Spotify tracks catalog")
     parser.add_argument(
         "--input",
-        default=str(DATA_DIR / "raw_kaggle.csv"),
-        help="Path to raw Kaggle CSV",
+        default=str(DATA_DIR / "spotify-tracks.csv"),
+        help="Path to raw Spotify tracks CSV",
     )
     parser.add_argument(
         "--output",

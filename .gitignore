@@ -23,5 +23,9 @@ logs/
 # Cached API responses
 data/lastfm_cache/
 
-# Raw Kaggle download (large)
+# Raw/large data files
 data/raw_kaggle.csv
+data/spotify-tracks.csv
+
+# Generated catalog
+data/catalog.csv
