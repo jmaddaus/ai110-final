@@ -1,7 +1,7 @@
-"""RAG module: Claude-powered explanations for music similarity.
+"""RAG module: Gemini-powered explanations for music similarity.
 
 Retrieves audio features and tags for a seed and candidate,
-then generates a natural language explanation using the Anthropic API.
+then generates a natural language explanation using the Google Gemini API.
 """
 
 from __future__ import annotations
@@ -9,9 +9,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import anthropic
+from google import genai
 
-from src.config import get_anthropic_api_key, RAG_MODEL, RAG_MAX_TOKENS, AUDIO_FEATURES
+from src.config import get_google_api_key, RAG_MODEL, RAG_MAX_TOKENS, AUDIO_FEATURES
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +24,10 @@ def build_context(
     tag_score: float | None,
     confidence: str,
 ) -> str:
-    """Build the retrieval context string for the Claude prompt.
+    """Build the retrieval context string for the Gemini prompt.
 
     Formats audio features, tags, shared tags, and scores into
-    a structured text block that Claude can reason about.
+    a structured text block that the model can reason about.
 
     Args:
         seed: Dict with seed track metadata and features.
@@ -71,7 +71,7 @@ def build_context(
 
 
 def build_prompt(context: str) -> str:
-    """Build the full prompt for Claude.
+    """Build the full prompt for Gemini.
 
     Args:
         context: The retrieval context from build_context().
@@ -99,7 +99,7 @@ def generate_explanation(
     tag_score: float | None = None,
     confidence: str = "medium",
 ) -> str | None:
-    """Generate a Claude explanation for why two tracks are similar.
+    """Generate a Gemini explanation for why two tracks are similar.
 
     This is the main function called by the Streamlit app.
 
@@ -121,13 +121,15 @@ def generate_explanation(
     prompt = build_prompt(context)
 
     try:
-        client = anthropic.Anthropic(api_key=get_anthropic_api_key())
-        message = client.messages.create(
+        client = genai.Client(vertexai=True, api_key=get_google_api_key())
+        response = client.models.generate_content(
             model=RAG_MODEL,
-            max_tokens=RAG_MAX_TOKENS,
-            messages=[{"role": "user", "content": prompt}],
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                max_output_tokens=RAG_MAX_TOKENS,
+            ),
         )
-        explanation = message.content[0].text.strip()
+        explanation = response.text.strip()
         logger.info(
             "Generated explanation for '%s' -> '%s'",
             seed.get("track_name", "?"),
@@ -135,21 +137,15 @@ def generate_explanation(
         )
         return explanation
 
-    except anthropic.AuthenticationError:
-        logger.warning("Anthropic authentication failed — check your API key")
-        return None
-    except anthropic.RateLimitError:
-        logger.warning("Anthropic rate limit reached, skipping explanation")
-        return None
-    except anthropic.APIError as e:
-        logger.warning("Anthropic API error: %s", e)
+    except Exception as e:
+        logger.warning("Gemini API error: %s", e)
         return None
 
 
 def is_available() -> bool:
     """Check whether the RAG module can be used (API key present)."""
     try:
-        get_anthropic_api_key()
+        get_google_api_key()
         return True
     except ValueError:
         return False

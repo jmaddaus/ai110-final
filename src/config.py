@@ -54,9 +54,9 @@ LASTFM_BASE_URL: str = "http://ws.audioscrobbler.com/2.0/"
 LASTFM_RATE_LIMIT_SECONDS: float = 1.0
 
 # ---------------------------------------------------------------------------
-# Claude RAG
+# Gemini RAG (Vertex AI)
 # ---------------------------------------------------------------------------
-RAG_MODEL: str = "claude-sonnet-4-20250514"
+RAG_MODEL: str = "gemini-3-flash-preview"
 RAG_MAX_TOKENS: int = 300
 
 
@@ -82,13 +82,13 @@ def get_lastfm_api_key() -> str:
     return key
 
 
-def get_anthropic_api_key() -> str:
-    """Return the Anthropic API key or raise with a helpful message."""
+def get_google_api_key() -> str:
+    """Return the Google API key or raise with a helpful message."""
     load_env()
-    key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not key or key == "your_anthropic_api_key_here":
+    key = os.environ.get("GOOGLE_API_KEY", "")
+    if not key or key == "your_google_api_key_here":
         raise ValueError(
-            "ANTHROPIC_API_KEY not set. Copy .env.example to .env and add your key. "
-            "Get a key at https://console.anthropic.com"
+            "GOOGLE_API_KEY not set. Copy .env.example to .env and add your key. "
+            "Get a key at https://aistudio.google.com/apikey"
         )
     return key

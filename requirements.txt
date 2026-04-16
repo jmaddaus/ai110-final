@@ -5,5 +5,5 @@ numpy
 scikit-learn
 requests
 python-dotenv
-anthropic
+google-genai
 matplotlib
