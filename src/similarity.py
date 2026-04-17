@@ -203,9 +203,10 @@ def find_similar(
     """
     feature_columns = feature_columns or AUDIO_FEATURES
 
-    # Resolve seed index
-    if isinstance(seed_track, int):
-        seed_index = seed_track
+    # Resolve seed index. Accept numpy integer types too, since pandas
+    # row labels come back as numpy.int64 and fail isinstance(..., int).
+    if isinstance(seed_track, (int, np.integer)):
+        seed_index = int(seed_track)
     else:
         matches = df[df["track_name"].str.lower() == seed_track.strip().lower()]
         if matches.empty:
