@@ -237,6 +237,7 @@ def find_similar(
     weights: dict[str, float] | None = None,
     tag_data: dict[str, list[str]] | None = None,
     lastfm_similar: dict[str, list[str]] | None = None,
+    instrument_data: dict[str, list[str]] | None = None,
     audio_weight: float = 0.7,
     tag_weight: float = 0.3,
     top_k: int = 10,
@@ -295,6 +296,7 @@ def find_similar(
     seed_artist_parts = {p.strip() for p in seed_artist_lower.split(";") if p.strip()}
     seed_tags = _lookup_artist_data(seed_artist_raw, tag_data)
     seed_similar = _lookup_artist_data(seed_artist_raw, lastfm_similar)
+    seed_instruments = _lookup_artist_data(seed_artist_raw, instrument_data)
     seed_similar_lower = [a.lower() for a in seed_similar]
 
     # Enrich each result with tag similarity and confidence
@@ -328,11 +330,28 @@ def find_similar(
         # Last.fm bonus
         lastfm_bonus = 0.05 if lastfm_confirms else 0.0
 
+        # Instrument fingerprint comparison. Only meaningful when both
+        # artists have structured member data. Very different band
+        # compositions (eg rock band vs dixieland ensemble) get a
+        # penalty; strong overlap gets a small bonus.
+        candidate_instruments = _lookup_artist_data(candidate_artist_raw, instrument_data)
+        if seed_instruments and candidate_instruments:
+            instrument_score = compute_tag_similarity(seed_instruments, candidate_instruments)
+        else:
+            instrument_score = None
+
+        instrument_modifier = 0.0
+        if instrument_score is not None:
+            if instrument_score < 0.15:
+                instrument_modifier = -0.15
+            elif instrument_score >= 0.5:
+                instrument_modifier = 0.05
+
         # Blended score
         effective_tag_score = tag_score if tag_score is not None else 0.0
         blended = compute_blended_score(
             result["audio_score"], effective_tag_score,
-            audio_weight, tag_weight, lastfm_bonus,
+            audio_weight, tag_weight, lastfm_bonus + instrument_modifier,
         )
 
         # Shared tags
@@ -343,6 +362,7 @@ def find_similar(
             "tag_score": tag_score,
             "lastfm_confirms": lastfm_confirms,
             "shared_tags": shared_tags,
+            "instrument_score": instrument_score,
         })
         enriched.append(result)
 

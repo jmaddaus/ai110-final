@@ -92,23 +92,26 @@ def load_data() -> pd.DataFrame | None:
 
 
 @st.cache_data
-def load_enrichment_data() -> tuple[dict, dict] | None:
-    """Load cached Last.fm tag and similar-artist data.
+def load_enrichment_data() -> tuple[dict, dict, dict] | None:
+    """Load cached Last.fm and MusicBrainz enrichment data.
 
     Returns:
-        Tuple of (tag_data, similar_data) dicts, or None if unavailable.
+        Tuple of (tag_data, similar_data, instrument_data), or None.
+        Any of the three dicts may be empty if its cache is missing.
     """
     if not LASTFM_CACHE_DIR.exists() or not any(LASTFM_CACHE_DIR.iterdir()):
         return None
 
-    from src.enrichment import load_tag_cache, load_similar_artist_cache
+    from src.enrichment import load_tag_cache, load_similar_artist_cache, load_instrument_cache
+    from src.musicbrainz_client import MUSICBRAINZ_CACHE_DIR
     tag_data = load_tag_cache(LASTFM_CACHE_DIR)
     similar_data = load_similar_artist_cache(LASTFM_CACHE_DIR)
+    instrument_data = load_instrument_cache(MUSICBRAINZ_CACHE_DIR)
 
     if not tag_data and not similar_data:
         return None
 
-    return tag_data, similar_data
+    return tag_data, similar_data, instrument_data
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +324,7 @@ def main() -> None:
 
     # Load enrichment data (optional)
     enrichment = load_enrichment_data()
-    tag_data, similar_data = enrichment if enrichment else (None, None)
+    tag_data, similar_data, instrument_data = enrichment if enrichment else (None, None, None)
 
     if not enrichment:
         st.sidebar.info("Last.fm data not loaded. Showing audio-only results.")
@@ -342,6 +345,7 @@ def main() -> None:
                     weights=settings["weights"],
                     tag_data=tag_data,
                     lastfm_similar=similar_data,
+                    instrument_data=instrument_data,
                     audio_weight=settings["audio_weight"],
                     tag_weight=settings["tag_weight"],
                     top_k=settings["top_k"],

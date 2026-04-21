@@ -22,6 +22,7 @@ logs/
 
 # Cached API responses
 data/lastfm_cache/
+data/musicbrainz_cache/
 
 # Raw/large data files
 data/raw_kaggle.csv

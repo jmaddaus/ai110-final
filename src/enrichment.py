@@ -45,6 +45,37 @@ def load_tag_cache(cache_dir: Path) -> dict[str, list[str]]:
     return tag_data
 
 
+def load_instrument_cache(cache_dir: Path) -> dict[str, list[str]]:
+    """Load all cached MusicBrainz artist instrument lists into a dict.
+
+    Args:
+        cache_dir: Path to the MusicBrainz cache directory.
+
+    Returns:
+        Dict mapping artist name (lowercase) to list of instruments played
+        by band members. Empty lists are skipped (solo artists, no data).
+    """
+    instrument_data: dict[str, list[str]] = {}
+
+    if not cache_dir.exists():
+        logger.warning("MusicBrainz cache directory does not exist: %s", cache_dir)
+        return instrument_data
+
+    for path in cache_dir.glob("artist_instruments_*.json"):
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            artist = data.get("name", "").lower()
+            instruments = data.get("instruments", [])
+            if artist and instruments:
+                instrument_data[artist] = instruments
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning("Failed to load instrument cache %s: %s", path.name, e)
+
+    logger.info("Loaded instruments for %d artists from cache", len(instrument_data))
+    return instrument_data
+
+
 def load_similar_artist_cache(cache_dir: Path) -> dict[str, list[str]]:
     """Load all cached similar-artist data into a dict.
 
