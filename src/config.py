@@ -51,7 +51,7 @@ DEFAULT_TAG_WEIGHT: float = 0.3
 # Last.fm API
 # ---------------------------------------------------------------------------
 LASTFM_BASE_URL: str = "http://ws.audioscrobbler.com/2.0/"
-LASTFM_RATE_LIMIT_SECONDS: float = 1.0
+LASTFM_RATE_LIMIT_SECONDS: float = 0.2
 
 # ---------------------------------------------------------------------------
 # Gemini RAG (Vertex AI)

@@ -16,6 +16,60 @@ from src.config import AUDIO_FEATURES, DEFAULT_FEATURE_WEIGHTS
 
 logger = logging.getLogger(__name__)
 
+AUDIO_CANDIDATE_POOL_SIZE = 500
+DEFAULT_MAX_PER_ARTIST = 2
+
+
+def _diversify(results: list[dict], top_k: int, max_per_artist: int) -> list[dict]:
+    """Greedy pass that caps each artist to max_per_artist in the top_k.
+
+    Walks the pre-sorted results, keeping a result unless that artist
+    already has max_per_artist picks. If the cap leaves us short of
+    top_k, we backfill with the skipped results in their original order.
+    """
+    if max_per_artist <= 0:
+        return results[:top_k]
+    kept: list[dict] = []
+    skipped: list[dict] = []
+    counts: dict[str, int] = {}
+    for r in results:
+        key = r["artist"].lower()
+        if counts.get(key, 0) < max_per_artist:
+            kept.append(r)
+            counts[key] = counts.get(key, 0) + 1
+            if len(kept) >= top_k:
+                break
+        else:
+            skipped.append(r)
+    if len(kept) < top_k:
+        kept.extend(skipped[: top_k - len(kept)])
+    return kept
+
+
+def _lookup_artist_data(artist_string: str, data: dict[str, list[str]] | None) -> list[str]:
+    """Look up tag or similar-artist data for an artist string.
+
+    Catalog rows use "A;B;C" for collaborations. The Last.fm cache keys
+    individual artists. This tries the full string first, then falls back
+    to splitting on ';' and unioning data from any parts that are cached.
+    """
+    if not data or not artist_string:
+        return []
+    full = artist_string.lower()
+    if full in data:
+        return data[full]
+    combined: list[str] = []
+    seen: set[str] = set()
+    for part in full.split(";"):
+        part = part.strip()
+        if part and part in data:
+            for item in data[part]:
+                key = item.lower() if isinstance(item, str) else str(item).lower()
+                if key not in seen:
+                    seen.add(key)
+                    combined.append(item)
+    return combined
+
 
 def build_feature_matrix(
     df: pd.DataFrame,
@@ -180,6 +234,8 @@ def find_similar(
     audio_weight: float = 0.7,
     tag_weight: float = 0.3,
     top_k: int = 10,
+    max_per_artist: int = DEFAULT_MAX_PER_ARTIST,
+    include_low_confidence: bool = True,
 ) -> list[dict]:
     """Top-level similarity search combining all signals.
 
@@ -220,26 +276,33 @@ def find_similar(
         df.iloc[seed_index].get("artist", "?"),
     )
 
-    # Build feature matrix and get audio-based results
+    # Build feature matrix and pull a wide audio pool so the tag layer
+    # has real candidates to rerank. If the pool is tiny, audio alone
+    # decides the result set and the tag signal is wasted.
     feature_matrix = build_feature_matrix(df, feature_columns, weights)
-    audio_results = find_similar_by_audio(seed_index, feature_matrix, df, top_k=top_k * 2)
+    pool_size = max(top_k * 2, AUDIO_CANDIDATE_POOL_SIZE)
+    audio_results = find_similar_by_audio(seed_index, feature_matrix, df, top_k=pool_size)
 
-    seed_artist = str(df.iloc[seed_index].get("artist", "")).lower()
-    seed_tags = (tag_data or {}).get(seed_artist, [])
-    seed_similar = (lastfm_similar or {}).get(seed_artist, [])
+    seed_artist_raw = str(df.iloc[seed_index].get("artist", ""))
+    seed_tags = _lookup_artist_data(seed_artist_raw, tag_data)
+    seed_similar = _lookup_artist_data(seed_artist_raw, lastfm_similar)
     seed_similar_lower = [a.lower() for a in seed_similar]
 
     # Enrich each result with tag similarity and confidence
     enriched = []
     for result in audio_results:
-        candidate_artist = result["artist"].lower()
-        candidate_tags = (tag_data or {}).get(candidate_artist, [])
+        candidate_artist_raw = result["artist"]
+        candidate_artist = candidate_artist_raw.lower()
+        candidate_tags = _lookup_artist_data(candidate_artist_raw, tag_data)
 
         # Tag similarity
         tag_score = compute_tag_similarity(seed_tags, candidate_tags) if (seed_tags or candidate_tags) else None
 
-        # Last.fm corroboration
-        lastfm_confirms = candidate_artist in seed_similar_lower
+        # Last.fm corroboration: any artist in the candidate string appearing in the seed's similar list
+        lastfm_confirms = any(
+            p.strip() in seed_similar_lower
+            for p in candidate_artist.split(";")
+        )
 
         # Last.fm bonus
         lastfm_bonus = 0.05 if lastfm_confirms else 0.0
@@ -262,11 +325,11 @@ def find_similar(
         })
         enriched.append(result)
 
-    # Sort by blended score and take top_k
+    # Sort the full pool, then rate confidence using the margin to the next
+    # entry in the full list (not the post-diversify slice). That way a
+    # confidence rating does not flip just because diversification removed
+    # the neighbor it was being compared against.
     enriched.sort(key=lambda r: r["blended_score"], reverse=True)
-    enriched = enriched[:top_k]
-
-    # Add confidence (needs score margin from sorted list)
     for i, result in enumerate(enriched):
         next_score = enriched[i + 1]["blended_score"] if i + 1 < len(enriched) else 0.0
         margin = result["blended_score"] - next_score
@@ -275,4 +338,7 @@ def find_similar(
             result["lastfm_confirms"], margin,
         )
 
-    return enriched
+    if not include_low_confidence:
+        enriched = [r for r in enriched if r["confidence"] != "low"]
+
+    return _diversify(enriched, top_k, max_per_artist)

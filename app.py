@@ -1,11 +1,13 @@
-"""Music Discovery Engine — Streamlit Web Application.
+"""Music Discovery Engine Streamlit Web Application.
 
 Entry point: streamlit run app.py
 
 Discover similar music across genre boundaries using cosine
-similarity on audio features, Last.fm tags, and Claude-powered
+similarity on audio features, Last.fm tags, and Gemini-powered
 explanations.
 """
+
+from __future__ import annotations
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -142,12 +144,18 @@ def render_sidebar() -> dict:
 
     st.sidebar.subheader("Results")
     top_k = st.sidebar.slider("Number of results", min_value=5, max_value=25, value=10)
+    include_low_confidence = st.sidebar.checkbox(
+        "Include low-confidence matches",
+        value=False,
+        help="Off by default. Low-confidence picks usually mean weak audio + no tag data.",
+    )
 
     return {
         "weights": weights,
         "audio_weight": audio_weight,
         "tag_weight": tag_weight,
         "top_k": top_k,
+        "include_low_confidence": include_low_confidence,
     }
 
 
@@ -331,6 +339,7 @@ def main() -> None:
                     audio_weight=settings["audio_weight"],
                     tag_weight=settings["tag_weight"],
                     top_k=settings["top_k"],
+                    include_low_confidence=settings["include_low_confidence"],
                 )
 
                 # Try to add RAG explanations
