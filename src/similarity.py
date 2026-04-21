@@ -207,13 +207,19 @@ def compute_confidence(
     """
     signals = 0
 
-    if audio_score >= 0.7:
+    # Audio alone is a weak discriminator on this catalog (most results
+    # come back at 0.95+), so we only count it when the seed and candidate
+    # are essentially identical sonically.
+    if audio_score >= 0.9:
         signals += 1
-    if tag_score is not None and tag_score >= 0.3:
+    # Jaccard on small tag sets is noisy; 0.15 is a more realistic
+    # threshold than 0.3 for "these artists share a meaningful portion
+    # of their community framing".
+    if tag_score is not None and tag_score >= 0.15:
         signals += 1
     if lastfm_confirms:
         signals += 1
-    if score_margin >= 0.05:
+    if score_margin >= 0.03:
         signals += 1
 
     if signals >= 3:

@@ -153,8 +153,8 @@ def test_confidence_high():
 
 
 def test_confidence_medium():
-    """Medium confidence: decent audio, no tags, no lastfm, decent margin."""
-    assert compute_confidence(0.8, 0.1, False, 0.06) == "medium"
+    """Medium confidence: strong audio, weak tags, no lastfm, decent margin."""
+    assert compute_confidence(0.92, 0.1, False, 0.06) == "medium"
 
 
 def test_confidence_low():
