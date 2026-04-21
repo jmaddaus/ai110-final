@@ -1,68 +1,84 @@
-# 🎧 Model Card: Music Recommender Simulation
+# 🎧 Model Card: Music Discovery Engine
 
-## 1. Model Name  
+## 1. Model Name
 
-**VibeFinder 1.0**  
+**Music Discovery Engine 2.0** (Streamlit web app)
 
----
-
-## 2. Intended Use  
-
-This system suggests the top 5 songs from a small catalog based on a user's preferred genre, mood, and energy level. It assumes the user knows what genre and mood they are in the mood for and can pick a target energy level between 0 and 1. This is a classroom project for learning how recommender systems work. It is not meant for real users or production use.  
+This replaces the earlier 18-song CLI prototype (VibeFinder 1.0). That system scored a tiny handcrafted catalog against a genre/mood/energy user profile. The current system is a content-based similarity engine over an ~81k-track catalog, with a tag-similarity layer and LLM-generated explanations.
 
 ---
 
-## 3. How the Model Works  
+## 2. Intended Use
 
-The system goes through every song in the catalog and gives each one a score based on how well it matches what the user wants. If the song's genre matches the user's favorite genre, it gets 2 points. If the mood matches, it gets 1 point. Then it looks at how close the song's energy level is to what the user asked for. If the energy is a perfect match, that is another full point. If it is far off, that part of the score is lower. After scoring every song, the system sorts them from highest to lowest and shows the top results along with the reasons each song scored the way it did.
-
----
-
-## 4. Data  
-
-The catalog has 18 songs in data/songs.csv. The starter file had 10 and I added 8 more to cover genres that were missing. The genres now include pop, lofi, rock, ambient, jazz, synthwave, indie pop, electronic, country, metal, r&b, hip-hop, classical, and folk. Moods range from happy and chill to intense, sad, romantic, and confident. Each song also has numerical attributes for energy, tempo, valence, danceability, and acousticness on a 0 to 1 scale (except tempo which is in BPM). The dataset is still pretty small and some genres only have one song, so it does not represent real musical variety very well.  
+Exploration, not personalization. A user enters a seed track they already know and likes, and the system surfaces other tracks whose audio features and community tags resemble the seed. It is meant for learning and demoing how a content-based recommender works. It is not built for production use, for children, or as a substitute for curated editorial recommendations.
 
 ---
 
-## 5. Strengths  
+## 3. How the Model Works
 
-- When a user's preferences line up cleanly with a song in the catalog (like the Relaxed Acoustic profile getting Campfire Songs), the system gives a confident and correct answer.
-- The explanation output is useful. You can see exactly why each song scored the way it did, which makes it easy to understand and debug.
-- The lofi and pop profiles both returned results that felt right. The top picks matched what you would expect someone with those preferences to want to hear.
-- The system is simple enough that you can predict what it will do just by looking at the weights, which is a nice property for something meant to be transparent.  
-
----
-
-## 6. Limitations and Bias 
-
-- Genre is weighted at 2.0 points, which is more than mood and energy combined in some cases. This means a song that matches genre but has the wrong mood can still rank above a song that nails the vibe but is labeled as a different genre. For example, Gym Hero (pop, intense) ranked above Rooftop Lights (indie pop, happy) for a user who wanted happy pop.
-- The catalog is small (18 songs) and some genres only have one entry. A classical fan or a metal fan basically gets one result and then a bunch of unrelated filler.
-- The system has no way for a user to say "I care about mood more than genre." Everyone gets the same weight formula.
-- It does not consider lyrics, artist popularity, release year, or anything beyond the basic CSV attributes. Two songs with similar numbers could sound nothing alike in practice.  
+1. Load the cleaned catalog (`data/catalog.csv`) and optionally the Last.fm tag / similar-artist cache.
+2. The user searches for an artist or song, picks a seed.
+3. The seed's audio-feature vector is multiplied by user-adjustable per-feature weights and compared against every other track via cosine similarity.
+4. The top-`2k` audio-similar tracks are enriched with:
+   - Jaccard similarity between the seed artist's Last.fm tags and the candidate artist's tags.
+   - A +0.05 bonus if Last.fm's `artist.getSimilar` list for the seed artist includes the candidate artist.
+5. A blended score (`audio * audio_weight + tag * tag_weight + lastfm_bonus`, clamped to `[0, 1]`) reranks the results; the top `k` are returned.
+6. Each result is tagged `high` / `medium` / `low` confidence based on how many of the signals agree and the score margin to the next result.
+7. For the top 5 results, Google Gemini generates a short natural-language explanation from a context block of features, tags, and scores.
 
 ---
 
-## 7. Evaluation  
+## 4. Data
 
-I tested the system with four user profiles: Happy Pop Fan (pop, happy, energy 0.8), Chill Lofi Listener (lofi, chill, energy 0.4), Intense Rock Fan (rock, intense, energy 0.9), and Relaxed Acoustic (folk, relaxed, energy 0.3). For each one I checked whether the top 5 results felt like reasonable picks.
-
-Most of the results made sense. The lofi listener got lofi and ambient tracks, the rock fan got Storm Runner at the top, and the acoustic listener got Campfire Songs with a perfect score. The one thing that surprised me was Gym Hero showing up at #2 for the happy pop fan. It is pop, but its mood is "intense," not "happy." It ranked that high purely because of the genre match being worth so many points.
-
-I also ran a weight experiment where I halved genre (2.0 to 1.0) and doubled energy (1.0 to 2.0). That fixed the Gym Hero issue for the pop fan, but did not change the top result for any profile. The tests in test_recommender.py also pass, confirming the OOP implementation sorts correctly.
+- **Catalog:** Kaggle Spotify Tracks Dataset, cleaned by `scripts/prepare_catalog.py`. 81,344 tracks, 31,437 unique artists, 114 genres. Loudness and tempo are min-max normalized; the other seven features (danceability, energy, speechiness, acousticness, instrumentalness, liveness, valence) already arrive in `[0, 1]`.
+- **Last.fm tags and similar artists:** fetched on demand from the Last.fm API at 1 request/second, cached as JSON under `data/lastfm_cache/`. Coverage depends on how many artists have been enriched. An empty cache means the app runs audio-only.
+- **Explanations:** generated at request time by Google Gemini; nothing is cached.
 
 ---
 
-## 8. Future Work  
+## 5. Strengths
 
-- Let users set their own weights so they can tell the system whether they care more about genre, mood, or energy.
-- Add a diversity penalty so the top results do not all come from the same genre or artist.
-- Include more song attributes like popularity, release year, or detailed mood tags to give the scoring more to work with.
-- Build a way to switch between different scoring strategies (like a "genre-first" mode vs a "mood-first" mode) instead of having one fixed formula.  
+- **Two complementary signals.** Audio features capture production and sonic profile; community tags capture the cultural framing listeners actually use. Blending them surfaces cross-genre matches that neither signal alone would find.
+- **Adjustable weights.** Per-feature sliders and the audio/tag blend slider let a user see how the recommendation set shifts when the system cares more about, e.g., valence than tempo.
+- **Graceful degradation.** The app runs with no Last.fm data (audio-only) and with no Gemini key (no explanations). Missing signals are surfaced in the UI rather than hidden.
+- **Transparent scoring.** Each result shows its audio score, tag score, shared tags, and confidence. The explanation layer makes the reasoning legible in plain language.
 
 ---
 
-## 9. Personal Reflection  
+## 6. Limitations and Bias
 
-The biggest thing I learned is how much the weights matter. A small change in how much genre is worth compared to energy completely changed which songs showed up for certain profiles. It made me realize that when Spotify or YouTube recommends something, there are people making those same kinds of decisions about what to prioritize, and those choices shape what millions of people end up listening to.
+- **Audio features are genre-agnostic.** Two tracks with similar danceability, energy, and tempo can come from totally different musical worlds. Audio-only results for "Stairway to Heaven" cluster with any slow acoustic ballad in the catalog, including cantopop, opera, and Indian film pop, because those all match the audio profile. The tag layer is what narrows this to the user's actual genre neighborhood; without Last.fm data the results are weak.
+- **Catalog skew.** The Kaggle dataset is Spotify-centric and over-represents popular Western artists. Seeds from under-represented regions or styles will pull toward majority clusters.
+- **Last.fm tag coverage is uneven.** Popular Western artists have rich consensus tags; long-tail or non-English artists often have sparse or idiosyncratic ones, so tag similarity is noisier for them.
+- **Gemini confidence vs. ground truth.** The model generates fluent explanations from whatever context we feed it. If the underlying features disagree with reality (a mislabeled track, say), Gemini will confidently explain a connection that is not actually there.
+- **No personalization.** Every session starts cold. The system does not remember prior seeds, prior clicks, or prior "not this" feedback.
+- **Popularity bias.** Search results are sorted by popularity, which nudges users toward seeds that already have dense metadata, reinforcing the long-tail gap.
 
-I was also surprised by how a system this simple can still produce results that feel like real recommendations. When the lofi profile got back a list of chill, low-energy tracks, it genuinely felt like something a music app would suggest. But at the same time, it is easy to see the cracks. The system does not really understand music. It just matches labels and numbers. A human would know that "Gym Hero" is not a good pick for someone who wants happy pop, but the algorithm cannot tell the difference because the genre label matches.  
+---
+
+## 7. Evaluation
+
+Evaluation so far is limited to unit tests and ad-hoc manual checks:
+
+- **Unit tests (`pytest`):** 24 tests pass. They cover catalog loading, min-max normalization, case-insensitive search, cosine similarity over a synthetic 5-track fixture (identical vectors → similarity ~1.0, seed exclusion, correct top-k count), Jaccard tag similarity on identical / disjoint / partial-overlap / empty / case-mixed tag lists, blended scoring under edge weights, and confidence rating across `high` / `medium` / `low`.
+- **Spot checks:** audio-only retrieval on a Led Zeppelin seed returns tracks with matching slow-acoustic-ballad features but mismatched genre/language (see §6). This confirms the design hypothesis that the tag layer is doing most of the semantic work.
+
+No quantitative user-facing evaluation (e.g., precision@k against a held-out set, user study) has been run yet. Human-led testing is the next step.
+
+---
+
+## 8. Future Work
+
+- Populate the Last.fm cache for at least the top N most-popular artists before any formal evaluation.
+- Add a "why not this" mechanism so a user can reject a result and have its features/tags downweighted.
+- Treat multi-artist tracks (`"Sam Smith;Kim Petras"`) as multiple artists for tag lookup rather than a single compound string.
+- Cache Gemini explanations so repeat seeds do not re-hit the API.
+- Collect explicit precision@k judgments from a small human panel on a fixed set of seeds, with and without the tag layer enabled, to quantify the tag layer's lift.
+
+---
+
+## 9. Personal Reflection
+
+The biggest thing I learned on this project is how much of a recommender's "intelligence" is really just two choices: what data you feed it, and which signal you weight most. The audio features on their own produced results that were mathematically correct and musically useless. It took adding the tag layer, which is just set overlap on human-written labels, for the system to start feeling like it understood anything. That reframed how I think about AI products in general. The parts that feel smart are often the parts leaning hardest on work someone else already did.
+
+The other thing that stuck with me is how confident a generated explanation can sound even when it is standing on shaky ground. Gemini never hesitates. It writes fluently about connections between tracks whether those connections are strong or weak. The only defense against that in this system is showing the scores and the confidence level next to the prose, so the user has something concrete to check the explanation against. That feels like a pattern worth carrying into any future LLM-facing feature I build.
