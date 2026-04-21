@@ -16,7 +16,7 @@ from src.config import AUDIO_FEATURES, DEFAULT_FEATURE_WEIGHTS
 
 logger = logging.getLogger(__name__)
 
-AUDIO_CANDIDATE_POOL_SIZE = 500
+AUDIO_CANDIDATE_POOL_SIZE = 5000
 DEFAULT_MAX_PER_ARTIST = 2
 
 
@@ -242,6 +242,7 @@ def find_similar(
     top_k: int = 10,
     max_per_artist: int = DEFAULT_MAX_PER_ARTIST,
     include_low_confidence: bool = True,
+    exclude_seed_artist: bool = True,
 ) -> list[dict]:
     """Top-level similarity search combining all signals.
 
@@ -290,6 +291,8 @@ def find_similar(
     audio_results = find_similar_by_audio(seed_index, feature_matrix, df, top_k=pool_size)
 
     seed_artist_raw = str(df.iloc[seed_index].get("artist", ""))
+    seed_artist_lower = seed_artist_raw.lower()
+    seed_artist_parts = {p.strip() for p in seed_artist_lower.split(";") if p.strip()}
     seed_tags = _lookup_artist_data(seed_artist_raw, tag_data)
     seed_similar = _lookup_artist_data(seed_artist_raw, lastfm_similar)
     seed_similar_lower = [a.lower() for a in seed_similar]
@@ -299,16 +302,28 @@ def find_similar(
     for result in audio_results:
         candidate_artist_raw = result["artist"]
         candidate_artist = candidate_artist_raw.lower()
+        candidate_parts = {p.strip() for p in candidate_artist.split(";") if p.strip()}
+
+        # Skip same-artist tracks when exclude_seed_artist is on. Compare
+        # on any overlap between candidate and seed parts so "Pritam" still
+        # matches "Pritam;Arijit Singh".
+        if exclude_seed_artist and seed_artist_parts & candidate_parts:
+            continue
+
         candidate_tags = _lookup_artist_data(candidate_artist_raw, tag_data)
 
         # Tag similarity
         tag_score = compute_tag_similarity(seed_tags, candidate_tags) if (seed_tags or candidate_tags) else None
 
-        # Last.fm corroboration: any artist in the candidate string appearing in the seed's similar list
-        lastfm_confirms = any(
-            p.strip() in seed_similar_lower
-            for p in candidate_artist.split(";")
-        )
+        # Last.fm corroboration is bidirectional: candidate listed as
+        # similar to the seed, OR the seed listed as similar to the
+        # candidate. Catches cases like GVF whose similar list includes
+        # Led Zeppelin even though LZ's does not include them.
+        lastfm_confirms = any(p in seed_similar_lower for p in candidate_parts)
+        if not lastfm_confirms:
+            candidate_similar = _lookup_artist_data(candidate_artist_raw, lastfm_similar)
+            candidate_similar_lower = [a.lower() for a in candidate_similar]
+            lastfm_confirms = any(p in candidate_similar_lower for p in seed_artist_parts)
 
         # Last.fm bonus
         lastfm_bonus = 0.05 if lastfm_confirms else 0.0

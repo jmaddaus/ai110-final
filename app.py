@@ -149,6 +149,11 @@ def render_sidebar() -> dict:
         value=False,
         help="Off by default. Low-confidence picks usually mean weak audio + no tag data.",
     )
+    exclude_seed_artist = st.sidebar.checkbox(
+        "Exclude the seed artist",
+        value=True,
+        help="On by default. Return other artists instead of more tracks by the one you seeded with.",
+    )
 
     return {
         "weights": weights,
@@ -156,6 +161,7 @@ def render_sidebar() -> dict:
         "tag_weight": tag_weight,
         "top_k": top_k,
         "include_low_confidence": include_low_confidence,
+        "exclude_seed_artist": exclude_seed_artist,
     }
 
 
@@ -340,6 +346,7 @@ def main() -> None:
                     tag_weight=settings["tag_weight"],
                     top_k=settings["top_k"],
                     include_low_confidence=settings["include_low_confidence"],
+                    exclude_seed_artist=settings["exclude_seed_artist"],
                 )
 
                 # Try to add RAG explanations
