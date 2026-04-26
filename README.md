@@ -31,7 +31,117 @@ For the top 5 results, the app builds a short context block (seed + candidate fe
 
 ### Data Flow
 
-See [flowchart.mmd](flowchart.mmd) for a Mermaid diagram.
+- [flowchart.mmd](flowchart.mmd): per-query step-by-step Mermaid diagram.
+- [system_diagram.mmd](system_diagram.mmd): component-level Mermaid diagram (also embedded below).
+- [system_diagram.md](system_diagram.md): plain-text version of the component diagram for environments that do not render Mermaid.
+
+---
+
+## System Diagram
+
+The system has five named components: a **Retriever** that pulls cached data, a **Similarity Engine** that blends six signals into a score, an **Evaluator** that rates each result, a **RAG Generator** that grounds an explanation in the retrieved context, and a **Tester** that catches regressions before they reach the user.
+
+```mermaid
+flowchart TB
+    User([User picks seed song<br/>+ adjusts sliders])
+    UI[Streamlit Web UI]
+
+    User --> UI
+    UI --> Retriever
+
+    subgraph Retriever [Retriever]
+        direction TB
+        Catalog[(Catalog<br/>81k Spotify tracks<br/>9 audio features)]
+        LFArtist[(Last.fm artist cache<br/>tags + similar artists)]
+        LFTrack[(Last.fm track-tag cache<br/>per-song descriptors)]
+        Embed[(Vertex AI embedding cache<br/>16k artist vectors)]
+        MB[(MusicBrainz cache<br/>member instruments)]
+    end
+
+    Retriever --> Engine
+
+    subgraph Engine [Similarity Engine]
+        direction TB
+        Pool[Audio cosine pool<br/>top 5k or 20k candidates]
+        Pool --> Blend[Blended score across 6 signals:<br/>audio cosine,<br/>IDF-weighted tag Jaccard,<br/>track-tag Jaccard,<br/>embedding cosine,<br/>match-weighted Last.fm bonus,<br/>popularity bucket]
+        Blend --> Diversify[Diversify by artist<br/>cap repeats]
+    end
+
+    Engine --> Evaluator
+
+    subgraph Evaluator [Evaluator]
+        Conf[Confidence rating<br/>high / medium / low<br/>based on signal agreement]
+    end
+
+    Evaluator --> Generator
+
+    subgraph Generator [RAG Generator]
+        Context[Build context block:<br/>features, tags, scores]
+        Gemini[Gemini gemini-3-flash-preview<br/>explanation grounded in context]
+        Context --> Gemini
+    end
+
+    Generator --> UI
+
+    subgraph Tester [Tester]
+        Unit[Unit tests<br/>pytest, 27 cases]
+        Shots[Playwright A/B screenshots<br/>before/after engine changes]
+    end
+
+    Tester -. validates .-> Engine
+    Tester -. validates .-> UI
+    Conf -. flags weak picks .-> User
+```
+
+**How to read it.** The user enters a seed at the top, the request flows through Retriever → Engine → Evaluator → Generator, and the rendered result lands back at the UI. Solid arrows are the request path; dotted arrows are the testing and confidence checks that sit alongside the pipeline rather than in it. The Tester subgraph runs offline (unit tests + Playwright captures), and the Confidence rating runs inline on every result and shows up as a badge in the UI so the user can judge how much to trust each pick.
+
+---
+
+## How This Extends the Baseline CLI
+
+The original assignment was a command-line recommender that ranked songs by audio cosine plus a single-genre tag match and printed a table. This Streamlit app keeps that recommender as the backbone and adds several capabilities on top.
+
+### Retrieval-Augmented Generation (RAG)
+
+For the top results, the app retrieves the seed and candidate audio features, the shared community tags, the audio and tag scores, and the confidence rating. It packages those into a structured context block and sends it to Gemini, which returns a 2-3 sentence explanation focused on actual musical qualities. The prompt instructs the model to reference the retrieved data rather than answer from training, so the explanation is grounded in this catalog rather than the model's general knowledge. Code lives in `src/rag.py`.
+
+### Reliability and testing system
+
+Three layers measure how well the system performs:
+
+- **Unit tests.** 27 tests in `tests/` cover the audio cosine, IDF-weighted tag Jaccard, blended scoring, confidence rating, data loading, and catalog search. `pytest` runs in under a second.
+- **Confidence ratings.** Every result is labelled high, medium, or low based on how many independent signals agree (audio cosine, tag overlap, Last.fm corroboration, score margin to the next result). See `compute_confidence` in `src/similarity.py`.
+- **End-to-end A/B captures.** `scripts/screenshot_app.py` drives Playwright against the running app and saves before-and-after PNGs whenever engine behavior changes. Useful for verifying that engine changes actually land in the UI rather than just in the unit tests. Captures are committed to `screenshots/` for diffing against future runs.
+
+### Multi-signal similarity engine
+
+The CLI used audio cosine plus a single-genre tag match. This app blends six layered signals into the score:
+
+- Cosine similarity on 9 weighted Spotify audio features.
+- IDF-weighted Jaccard on Last.fm artist tags, so rare tags ("shoegaze") carry more weight than common ones ("rock").
+- Match-weighted Last.fm similar-artist bonus that scales with the actual 0-1 confidence score, replacing the old flat bonus.
+- Track-level Last.fm tags when both seed and candidate have them, with graceful fallback to artist-level tags otherwise.
+- Vertex AI text-embedding cosine in 768-dim space, capturing semantic relationships that Jaccard cannot.
+- Popularity-bucket modifier so mainstream seeds stay in mainstream space and obscure seeds in obscure space.
+
+### Specialised models from Vertex AI
+
+Two purpose-built models, picked off the shelf rather than fine-tuned by us:
+
+- `text-embedding-005` for the per-artist semantic vectors. Embeddings are L2-normalised at save time so cosine becomes a single dot product at query time.
+- `gemini-3-flash-preview` for the RAG explanations. Specialised for low-latency text generation.
+
+### Track-level (song-first) matching
+
+The CLI matched on artist-level signals, so seeding Stairway versus Black Dog produced the same neighborhood. This app fetches per-song Last.fm tags and uses them in preference to artist tags whenever both seed and candidate have them. Track tags carry song-specific descriptors ("ballad", "guitar riff", "indie folk") that artist tags miss. Coverage is partial because Last.fm community tagging is sparse outside contemporary pop and hip-hop, so the system falls back to artist tags when song-level data is missing.
+
+### Discovery mode
+
+A sidebar toggle that flips the scoring to surface non-canonical neighbors. Candidates with embedding cosine in the [0.45, 0.65] sweet spot get a bonus (close enough to feel related, far enough to feel novel), strong-canon embeddings above 0.75 get a penalty, and less-popular candidates get a small obscurity bonus. Useful for finding tracks that share a sonic dimension with the seed but live outside its scene.
+
+### Web UI
+
+Streamlit interface in place of console output. Searchable seed selection, per-feature audio-weight sliders, similarity-blend control, mode toggle, expandable result cards with radar charts, shared tags, and the RAG explanation surfaced inline.
 
 ---
 
