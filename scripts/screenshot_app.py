@@ -20,12 +20,10 @@ BASE_URL = "http://localhost:8501"
 OUT = Path(__file__).resolve().parent.parent / "screenshots"
 
 SEEDS = [
-    ("ui_default_zeppelin", "Black Dog", "default"),
-    ("ui_discovery_zeppelin", "Black Dog", "discovery"),
-    ("ui_default_kendrick", "HUMBLE", "default"),
-    ("ui_discovery_kendrick", "HUMBLE", "discovery"),
-    ("ui_default_hank", "I'm So Lonesome", "default"),
-    ("ui_discovery_hank", "I'm So Lonesome", "discovery"),
+    ("ui_tracktags_humble", "HUMBLE", "default"),
+    ("ui_tracktags_drivers", "drivers license", "default"),
+    ("ui_tracktags_august", "august", "default"),
+    ("ui_tracktags_zeppelin", "Black Dog", "default"),
 ]
 
 
