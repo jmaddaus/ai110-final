@@ -5,7 +5,7 @@ Usage:
     python -m scripts.screenshot_app
 
 Assumes Streamlit is already running on http://localhost:8501.
-Writes PNGs to screenshots/ui_*.png.
+Writes PNGs to assets/ui_*.png.
 """
 
 from __future__ import annotations

@@ -108,7 +108,7 @@ All four enrichment scripts are resumable. Each fetched record is written to dis
 Two forms of human-in-the-loop testing:
 
 - **Manual seed comparison.** A fixed set of 11 seeds covering different genres and coverage regimes (Black Dog, Stairway to Heaven, HUMBLE., august, drivers license, Wildest Dreams, Mozart, Hank Williams, Frank Ocean, Kacey Musgraves, BTS) was re-checked by hand after every major engine change. Reading the top 10 results across that set caught problems unit tests could not: discovery-mode score saturation, low-popularity catalog noise dominating, and the song-first reframing that drove the track-tag enrichment work.
-- **Playwright A/B captures.** `scripts/screenshot_app.py` drives a headless Chromium against the running Streamlit app and saves full-page PNGs for each seed under `screenshots/`. The committed `ui_default_*` and `ui_discovery_*` files document the discovery-mode toggle effect; `ui_tracktags_*` files document the track-tag layer behavior across coverage regimes. Engine changes can be diffed visually by re-running the script and comparing PNGs.
+- **Playwright A/B captures.** `scripts/screenshot_app.py` drives a headless Chromium against the running Streamlit app and saves full-page PNGs for each seed under `assets/`. The committed `ui_default_*` and `ui_discovery_*` files document the discovery-mode toggle effect; `ui_tracktags_*` files document the track-tag layer behavior across coverage regimes. Engine changes can be diffed visually by re-running the script and comparing PNGs.
 
 ### 7.5 Summary
 
@@ -131,3 +131,33 @@ Two forms of human-in-the-loop testing:
 The biggest thing I learned on this project is how much of a recommender's "intelligence" is really just two choices: what data you feed it, and which signal you weight most. The audio features on their own produced results that were mathematically correct and musically useless. It took adding the tag layer, which is just set overlap on human-written labels, for the system to start feeling like it understood anything. That reframed how I think about AI products in general. The parts that feel smart are often the parts leaning hardest on work someone else already did.
 
 The other thing that stuck with me is how confident a generated explanation can sound even when it is standing on shaky ground. Gemini never hesitates. It writes fluently about connections between tracks whether those connections are strong or weak. The only defense against that in this system is showing the scores and the confidence level next to the prose, so the user has something concrete to check the explanation against. That feels like a pattern worth carrying into any future LLM-facing feature I build.
+
+---
+
+## 10. Responsible AI
+
+Four questions worth answering directly: limits, misuse, surprises, and how I worked with AI on this project.
+
+### 10.1 What are the system's limitations or biases?
+
+Covered in detail in §6 Limitations and Bias. The short version: the catalog is Spotify-centric and skews popular-Western. Last.fm community tagging adds the same skew. Track-tag coverage is heaviest for contemporary pop and hip-hop and thinnest for classic rock, jazz, and most non-English music. The result is that two of the three main signals are noisier the further the seed gets from the popular-Western mainstream. The explanation layer is fluent regardless of how strong the underlying scores are, which can read as confidence when the actual signals are weak.
+
+### 10.2 Could the system be misused?
+
+A music recommender at scale shapes what people hear as "similar". The choices baked into this system (which signals get weighted, what the popularity bucket does, what the canon penalty looks like) are policy decisions, not technical ones. A bad-faith operator could weight the system to push specific artists, exclude certain genres, or homogenize listening into a narrow band. A naive operator could let it run with the default popularity bias and quietly under-surface long-tail artists for everyone.
+
+The defenses I put in place are deliberately limited but real. Every result shows its scores, its shared tags, and its confidence rating, so the user can see what is driving the recommendation rather than trusting a black box. The discovery-mode toggle gives the user a way to step outside the canon when the canonical recommendations feel like an echo chamber. There is no engagement-based feedback loop, so the system cannot build self-reinforcing filter bubbles from prior usage. Real-world deployment would need at minimum an audit of which artists get under-recommended at default settings, plus a way for users to flag bad recommendations.
+
+### 10.3 What surprised me while testing reliability?
+
+Two things. First, how much "AI quality" turned out to be coverage quality. The MusicBrainz instrument-fingerprint signal looked rich on paper but came in at 19% coverage and was effectively dead. The Last.fm track-tag layer hit a 16% wall on popular tracks. After both of those, the lesson sank in: the algorithm did not matter once the data dropped below roughly 40%. The thing I had been building was a machine for combining signals that often were not there.
+
+Second, how confident the LLM stayed even when the recommendation was weak. Gemini does not hedge based on the confidence rating I send it. The prose is just as smooth on a low-confidence pick as on a high-confidence one. That made the confidence badge feel essential, not optional, because the prose itself does not carry the uncertainty.
+
+### 10.4 Collaboration with AI
+
+I built this system in a paired session with Claude. Most engineering decisions were proposed by the AI and either accepted, rejected, or modified by me. Two examples stand out.
+
+**A useful suggestion.** When I articulated the song-first goal (a band's slow ballad and hard-rock track should produce different recommendations), Claude proposed track-level Last.fm tags as the concrete fix and built the wiring before the data finished landing. The first real validation was Taylor Swift's "august" surfacing Vance Joy's "Riptide" via shared *indie folk / indie pop*, which is exactly the cross-artist song-first match the prior architecture missed. The reframing came from me; the implementation path came from Claude.
+
+**A flawed suggestion.** Earlier in the project, Claude proposed adding a MusicBrainz instrument fingerprint as a similarity signal. The pitch was that band-composition similarity (rock band with guitar / drums / bass vs jazz quartet with piano / sax) would catch cross-genre coincidences the audio cosine missed. I went along with it. After the cache landed, we measured 19% coverage and confirmed the signal was effectively dead for ~80% of artists. The first attempt at discovery mode had a similar shape: the initial implementation surfaced children's-pop covers and EDM remixes for a Black Dog seed because the canon penalty was too aggressive, and we needed several correction passes before it produced anything useful. The general lesson is that AI suggestions are good at finding clever-looking signals but tend to underweight the question of whether the signal will fire often enough to matter.

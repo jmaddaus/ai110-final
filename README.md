@@ -24,11 +24,11 @@ The system has five named components, in request order:
 4. **RAG Generator** builds a context block from the retrieved data and asks Gemini to ground a 2-3 sentence explanation in it.
 5. **Tester** sits alongside the pipeline rather than in it. Validates engine logic via 27 pytest cases and verifies UI behavior via Playwright A/B screenshots.
 
-![System Diagram](screenshots/system_diagram.png)
+![System Diagram](assets/system_diagram.png)
 
 **How to read it.** The user enters a seed at the top. The request flows down through Retriever → Similarity Engine → Evaluator → RAG Generator, lands as a rendered result card, and the user reads it at the bottom. Solid arrows are the request path; dotted arrows are the testing checks that sit alongside the pipeline. The Tester block (right side) runs offline (unit tests + Playwright A/B captures), and the Confidence rating runs inline on every result and shows up as a badge in the UI so the user can judge how much to trust each pick.
 
-Diagram files: [system_diagram.png](screenshots/system_diagram.png) (rendered image, shown above), [system_diagram.mmd](system_diagram.mmd) (Mermaid source), [system_diagram.md](system_diagram.md) (plain-text fallback for environments that do not render images), [flowchart.mmd](flowchart.mmd) (per-query step-by-step view).
+Diagram files: [system_diagram.png](assets/system_diagram.png) (rendered image, shown above), [system_diagram.mmd](system_diagram.mmd) (Mermaid source), [system_diagram.md](system_diagram.md) (plain-text fallback for environments that do not render images), [flowchart.mmd](flowchart.mmd) (per-query step-by-step view).
 
 ---
 
@@ -46,7 +46,7 @@ Three layers measure how well the system performs:
 
 - **Unit tests.** 27 tests in `tests/` cover the audio cosine, IDF-weighted tag Jaccard, blended scoring, confidence rating, data loading, and catalog search. `pytest` runs in under a second.
 - **Confidence ratings.** Every result is labelled high, medium, or low based on how many independent signals agree (audio cosine, tag overlap, Last.fm corroboration, score margin to the next result). See `compute_confidence` in `src/similarity.py`.
-- **End-to-end A/B captures.** `scripts/screenshot_app.py` drives Playwright against the running app and saves before-and-after PNGs whenever engine behavior changes. Useful for verifying that engine changes actually land in the UI, not just in the unit tests. Captures are committed to `screenshots/` for diffing against future runs.
+- **End-to-end A/B captures.** `scripts/screenshot_app.py` drives Playwright against the running app and saves before-and-after PNGs whenever engine behavior changes. Useful for verifying that engine changes actually land in the UI, not just in the unit tests. Captures are committed to `assets/` for diffing against future runs.
 
 ### Multi-signal similarity engine
 
@@ -168,7 +168,7 @@ Three seeds chosen to show the system across different coverage regimes.
 
 **Why this case is interesting.** 8 of 10 results matched on track-level tags, not artist-level tags. The shared tags are song-level descriptors (*pop rap*, *trap*) rather than just artist-level genre labels. This is the regime where the song-first design is doing its real work. Confidence ratings ran medium-to-high across the top.
 
-Screenshot: [screenshots/ui_tracktags_humble.png](screenshots/ui_tracktags_humble.png)
+Screenshot: [assets/ui_tracktags_humble.png](assets/ui_tracktags_humble.png)
 
 ### Example 2: Taylor Swift "august" (cross-artist song-first match)
 
@@ -180,7 +180,7 @@ Screenshot: [screenshots/ui_tracktags_humble.png](screenshots/ui_tracktags_humbl
 
 **Why this case is interesting.** Taylor Swift's artist-level tags are dominated by *pop* and *country pop*. If the engine matched on artist tags alone, you would get more country-pop tracks. Because both *august* and *Riptide* have track-level tags including *indie folk*, the engine surfaces Vance Joy as the #1 match even though Vance Joy is not in Taylor Swift's Last.fm similar-artist list. This is the cross-artist song-first match the song-level signal was added to enable.
 
-Screenshot: [screenshots/ui_tracktags_august.png](screenshots/ui_tracktags_august.png)
+Screenshot: [assets/ui_tracktags_august.png](assets/ui_tracktags_august.png)
 
 ### Example 3: Black Dog (Led Zeppelin), default vs discovery mode
 
@@ -194,7 +194,7 @@ The default-mode list is the classic-rock canon. All 10 results share Last.fm ta
 
 The discovery list is rock-adjacent but explicitly outside the Zeppelin canon. None of these would have appeared in default mode. The mode flips the embedding signal from a bonus to a penalty for canon candidates and rewards mid-band embedding cosine [0.45, 0.65], which is the "close enough to feel related, far enough to feel novel" sweet spot.
 
-Screenshots: [default](screenshots/ui_default_zeppelin.png), [discovery](screenshots/ui_discovery_zeppelin.png).
+Screenshots: [default](assets/ui_default_zeppelin.png), [discovery](assets/ui_discovery_zeppelin.png).
 
 ---
 
@@ -324,5 +324,5 @@ data/
   lastfm_cache/                     Per-artist + per-track Last.fm JSON cache
   musicbrainz_cache/                MusicBrainz artist instrument cache
   embeddings/artist_embeddings.npz  Vertex AI embeddings (matrix + names)
-screenshots/                        Committed UI captures from the screenshot script
+assets/                             System diagram + committed UI captures (rubric: dedicated /assets folder)
 ```
