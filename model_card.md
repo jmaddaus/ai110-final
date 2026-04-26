@@ -56,14 +56,63 @@ Exploration, not personalization. A user enters a seed track they already know a
 
 ---
 
-## 7. Evaluation
+## 7. Reliability and Evaluation
 
-Evaluation so far is limited to unit tests and ad-hoc manual checks:
+The system uses four complementary approaches to prove that it works rather than just seems to: automated tests, confidence scoring, logging and error handling, and human evaluation through ad-hoc and Playwright-driven A/B captures.
 
-- **Unit tests (`pytest`):** 24 tests pass. They cover catalog loading, min-max normalization, case-insensitive search, cosine similarity over a synthetic 5-track fixture (identical vectors → similarity ~1.0, seed exclusion, correct top-k count), Jaccard tag similarity on identical / disjoint / partial-overlap / empty / case-mixed tag lists, blended scoring under edge weights, and confidence rating across `high` / `medium` / `low`.
-- **Spot checks:** audio-only retrieval on a Led Zeppelin seed returns tracks with matching slow-acoustic-ballad features but mismatched genre/language (see §6). This confirms the design hypothesis that the tag layer is doing most of the semantic work.
+### 7.1 Automated tests
 
-No quantitative user-facing evaluation (e.g., precision@k against a held-out set, user study) has been run yet. Human-led testing is the next step.
+`pytest` runs 27 unit tests in under a second. The breakdown:
+
+| Category | Count | What it covers |
+|---|---|---|
+| Data loader | 8 | Catalog load, missing-file raising, normalization range, search (case-insensitive, no-results, empty-query), `get_unique_artists`, `get_artist_tracks` |
+| Audio cosine | 5 | Feature-matrix shape, weighted matrix, identical-vector similarity ≈ 1.0, seed exclusion from results, correct top-k count |
+| Tag similarity | 8 | Plain Jaccard (identical / disjoint / partial / empty / case-mixed) plus IDF-weighted variants (rare tags weigh more, None falls back to plain, unknown tags contribute zero) |
+| Blended score | 3 | Audio-only weighting, default 70/30 blend, clamping at 1.0 |
+| Confidence rating | 3 | `high` / `medium` / `low` correctness across signal counts |
+
+Run them with:
+
+```bash
+pytest
+```
+
+Latest result: **27 of 27 pass**.
+
+### 7.2 Confidence scoring
+
+Every recommendation is labelled `high` / `medium` / `low` by `compute_confidence` in `src/similarity.py`. The label is based on how many of these four independent signals agree:
+
+- audio cosine ≥ 0.9 (strong sonic match)
+- tag Jaccard ≥ 0.15 (real overlap on community framing)
+- Last.fm corroboration (candidate is in the seed's similar-artist list, or vice versa)
+- score margin ≥ 0.03 to the next-ranked result (gap is wide enough to be meaningful, not a coin flip)
+
+3 or 4 signals agreeing → `high`. 2 → `medium`. 0 or 1 → `low`. The label shows up as a coloured badge next to every result in the UI so the user has a runtime cue of how much to trust each pick. During development we used a confidence-collapse across a batch of seeds as an early-warning sign that the engine had regressed.
+
+### 7.3 Logging and error handling
+
+The app logs to both the console and a rotating file handler at `logs/app.log` (1 MB per file, 3 backups; configured in `app.py:setup_logging`). Each module uses a named logger (`src.lastfm_client`, `src.embeddings`, etc.) so failures can be traced to the source.
+
+External-dependency failures degrade gracefully rather than crash:
+
+- **Last.fm and MusicBrainz APIs.** Network errors and HTTP failures are caught, logged as warnings, and treated as cache-miss equivalents. With no Last.fm cache, the app falls back to audio-only scoring and surfaces a sidebar notice.
+- **Vertex AI.** Missing credentials disable the embedding signal silently. Auth failures during enrichment retry once with a fresh token before falling through to a logged warning.
+- **Catalog edge cases.** NaN values in the catalog (rare, but real) are coerced to empty strings before any `.lower()` or string-join. Long collaboration strings (some catalog tracks credit ~30 artists) get a SHA1 suffix on cache filenames so they fit inside macOS's 255-char filename limit.
+
+All four enrichment scripts are resumable. Each fetched record is written to disk before the next call, so an interrupted run loses no work and re-running the script picks up where it stopped.
+
+### 7.4 Human evaluation
+
+Two forms of human-in-the-loop testing:
+
+- **Manual seed comparison.** A fixed set of 11 seeds covering different genres and coverage regimes (Black Dog, Stairway to Heaven, HUMBLE., august, drivers license, Wildest Dreams, Mozart, Hank Williams, Frank Ocean, Kacey Musgraves, BTS) was re-checked by hand after every major engine change. Reading the top 10 results across that set caught problems unit tests could not: discovery-mode score saturation, low-popularity catalog noise dominating, and the song-first reframing that drove the track-tag enrichment work.
+- **Playwright A/B captures.** `scripts/screenshot_app.py` drives a headless Chromium against the running Streamlit app and saves full-page PNGs for each seed under `screenshots/`. The committed `ui_default_*` and `ui_discovery_*` files document the discovery-mode toggle effect; `ui_tracktags_*` files document the track-tag layer behavior across coverage regimes. Engine changes can be diffed visually by re-running the script and comparing PNGs.
+
+### 7.5 Summary
+
+**27 of 27 unit tests pass.** The system struggles when Last.fm community tagging is sparse: track-tag coverage hits a ~16% ceiling outside contemporary pop and hip-hop, so seeds in classic rock and world music fall back to artist-level matching and the song-first effect is muted. Confidence ratings shifted from mostly-low to mostly-medium-or-high after the v2 priority-ordered Last.fm enrichment took artist-tag coverage from ~3k to ~16k. The track-tag layer became visibly useful once both the seed and at least some candidates had per-song tags (8 of 10 [track]-layer hits on the Kendrick HUMBLE. seed; 0 of 10 on the Black Dog seed where Last.fm has not tagged the canonical 70s-rock candidates). No quantitative user-facing evaluation (precision@k against a held-out set, user study) has been run yet; that is the natural next step.
 
 ---
 
