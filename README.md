@@ -24,61 +24,11 @@ The system has five named components, in request order:
 4. **RAG Generator** builds a context block from the retrieved data and asks Gemini to ground a 2-3 sentence explanation in it.
 5. **Tester** sits alongside the pipeline rather than in it. Validates engine logic via 27 pytest cases and verifies UI behavior via Playwright A/B screenshots.
 
-```mermaid
-flowchart TB
-    User([User picks seed song<br/>+ adjusts sliders])
-    UI[Streamlit Web UI]
+![System Diagram](screenshots/system_diagram.png)
 
-    User --> UI
-    UI --> Retriever
+**How to read it.** The user enters a seed at the top. The request flows down through Retriever → Similarity Engine → Evaluator → RAG Generator, lands as a rendered result card, and the user reads it at the bottom. Solid arrows are the request path; dotted arrows are the testing checks that sit alongside the pipeline. The Tester block (right side) runs offline (unit tests + Playwright A/B captures), and the Confidence rating runs inline on every result and shows up as a badge in the UI so the user can judge how much to trust each pick.
 
-    subgraph Retriever [Retriever]
-        direction TB
-        Catalog[(Catalog<br/>81k Spotify tracks<br/>9 audio features)]
-        LFArtist[(Last.fm artist cache<br/>tags + similar artists)]
-        LFTrack[(Last.fm track-tag cache<br/>per-song descriptors)]
-        Embed[(Vertex AI embedding cache<br/>16k artist vectors)]
-        MB[(MusicBrainz cache<br/>member instruments)]
-    end
-
-    Retriever --> Engine
-
-    subgraph Engine [Similarity Engine]
-        direction TB
-        Pool[Audio cosine pool<br/>top 5k or 20k candidates]
-        Pool --> Blend[Blended score across 6 signals:<br/>audio cosine,<br/>IDF-weighted tag Jaccard,<br/>track-tag Jaccard,<br/>embedding cosine,<br/>match-weighted Last.fm bonus,<br/>popularity bucket]
-        Blend --> Diversify[Diversify by artist<br/>cap repeats]
-    end
-
-    Engine --> Evaluator
-
-    subgraph Evaluator [Evaluator]
-        Conf[Confidence rating<br/>high / medium / low<br/>based on signal agreement]
-    end
-
-    Evaluator --> Generator
-
-    subgraph Generator [RAG Generator]
-        Context[Build context block:<br/>features, tags, scores]
-        Gemini[Gemini gemini-3-flash-preview<br/>explanation grounded in context]
-        Context --> Gemini
-    end
-
-    Generator --> UI
-
-    subgraph Tester [Tester]
-        Unit[Unit tests<br/>pytest, 27 cases]
-        Shots[Playwright A/B screenshots<br/>before/after engine changes]
-    end
-
-    Tester -. validates .-> Engine
-    Tester -. validates .-> UI
-    Conf -. flags weak picks .-> User
-```
-
-**How to read it.** The user enters a seed at the top, the request flows through Retriever → Engine → Evaluator → Generator, and the rendered result lands back at the UI. Solid arrows are the request path; dotted arrows are the testing and confidence checks that sit alongside the pipeline. The Tester subgraph runs offline (unit tests + Playwright captures), and the Confidence rating runs inline on every result and shows up as a badge in the UI so the user can judge how much to trust each pick.
-
-Diagram files: [system_diagram.mmd](system_diagram.mmd) (Mermaid), [system_diagram.md](system_diagram.md) (plain-text fallback), [flowchart.mmd](flowchart.mmd) (per-query step-by-step view).
+Diagram files: [system_diagram.png](screenshots/system_diagram.png) (rendered image, shown above), [system_diagram.mmd](system_diagram.mmd) (Mermaid source), [system_diagram.md](system_diagram.md) (plain-text fallback for environments that do not render images), [flowchart.mmd](flowchart.mmd) (per-query step-by-step view).
 
 ---
 

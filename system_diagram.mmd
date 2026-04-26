@@ -1,12 +1,11 @@
 flowchart TB
-    User([User picks seed song<br/>+ adjusts sliders])
-    UI[Streamlit Web UI]
+    User([User picks seed song<br/>+ adjusts sliders]):::human
+    UI[Streamlit Web UI<br/>seed input]
 
     User --> UI
-    UI --> Retriever
 
     subgraph Retriever [Retriever]
-        direction TB
+        direction LR
         Catalog[(Catalog<br/>81k Spotify tracks<br/>9 audio features)]
         LFArtist[(Last.fm artist cache<br/>tags + similar artists)]
         LFTrack[(Last.fm track-tag cache<br/>per-song descriptors)]
@@ -14,41 +13,45 @@ flowchart TB
         MB[(MusicBrainz cache<br/>member instruments)]
     end
 
-    Retriever --> Engine
+    UI --> Retriever
 
     subgraph Engine [Similarity Engine]
         direction TB
         Pool[Audio cosine pool<br/>top 5k or 20k candidates]
-        Pool --> Blend[Blended score across 6 signals:<br/>audio cosine,<br/>IDF-weighted tag Jaccard,<br/>track-tag Jaccard,<br/>embedding cosine,<br/>match-weighted Last.fm bonus,<br/>popularity bucket]
-        Blend --> Diversify[Diversify by artist<br/>cap repeats]
+        Pool --> Blend[Blend 6 signals:<br/>audio cosine, IDF tag Jaccard,<br/>track-tag Jaccard, embedding cosine,<br/>match-weighted Last.fm bonus,<br/>popularity bucket]
+        Blend --> Diversify[Diversify by artist]
+    end
+
+    Retriever --> Engine
+
+    subgraph Evaluator [Evaluator]
+        Conf[Confidence rating<br/>high / medium / low]
     end
 
     Engine --> Evaluator
 
-    subgraph Evaluator [Evaluator]
-        Conf[Confidence rating<br/>high / medium / low<br/>based on signal agreement]
+    subgraph Generator [RAG Generator]
+        direction LR
+        Context[Build context block:<br/>features, tags, scores]
+        Gemini[Gemini gemini-3-flash-preview<br/>grounded explanation]
+        Context --> Gemini
     end
 
     Evaluator --> Generator
 
-    subgraph Generator [RAG Generator]
-        Context[Build context block:<br/>features, tags, scores]
-        Gemini[Gemini gemini-3-flash-preview<br/>explanation grounded in context]
-        Context --> Gemini
-    end
-
-    Generator --> UI
+    Output[Streamlit result cards<br/>scores + tags + radar + explanation]:::output
+    Generator --> Output
+    Output --> Reader([User reads results<br/>+ confidence badge]):::human
 
     subgraph Tester [Tester]
-        Unit[Unit tests<br/>pytest, 27 cases]
-        Shots[Playwright A/B screenshots<br/>before/after engine changes]
+        direction LR
+        Unit[Unit tests<br/>pytest, 27 cases]:::test
+        Shots[Playwright A/B<br/>screenshots]:::test
     end
 
     Tester -. validates .-> Engine
-    Tester -. validates .-> UI
-    Conf -. flags weak picks .-> User
+    Tester -. validates .-> Output
 
     classDef human fill:#fef3c7,stroke:#92400e,stroke-width:2px
     classDef test fill:#dbeafe,stroke:#1e3a8a,stroke-width:1px
-    class User human
-    class Unit,Shots test
+    classDef output fill:#dcfce7,stroke:#14532d,stroke-width:2px
