@@ -8,11 +8,45 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+
+def compute_tag_idf(
+    tag_data: dict[str, list[str]],
+    smoothing: float = 1.0,
+) -> dict[str, float]:
+    """Compute inverse-document-frequency for each tag in the corpus.
+
+    IDF(t) = log((N + smoothing) / (df(t) + smoothing))
+
+    The smoothing term avoids divide-by-zero and damps the boost on
+    extremely rare tags (which often reflect typos rather than
+    meaningful niches).
+
+    Args:
+        tag_data: Dict mapping artist name (lowercase) to list of tags.
+        smoothing: Additive smoothing for both N and df(t).
+
+    Returns:
+        Dict mapping tag (lowercase) to IDF weight.
+    """
+    if not tag_data:
+        return {}
+    n_docs = len(tag_data)
+    doc_freq: dict[str, int] = {}
+    for tags in tag_data.values():
+        seen = {t.lower() for t in tags}
+        for tag in seen:
+            doc_freq[tag] = doc_freq.get(tag, 0) + 1
+    return {
+        tag: math.log((n_docs + smoothing) / (count + smoothing))
+        for tag, count in doc_freq.items()
+    }
 
 
 def load_tag_cache(cache_dir: Path) -> dict[str, list[str]]:
@@ -76,16 +110,20 @@ def load_instrument_cache(cache_dir: Path) -> dict[str, list[str]]:
     return instrument_data
 
 
-def load_similar_artist_cache(cache_dir: Path) -> dict[str, list[str]]:
-    """Load all cached similar-artist data into a dict.
+def load_similar_artist_cache(cache_dir: Path) -> dict[str, dict[str, float]]:
+    """Load all cached similar-artist data, preserving Last.fm match scores.
 
     Args:
         cache_dir: Path to the Last.fm cache directory.
 
     Returns:
-        Dict mapping artist name (lowercase) to list of similar artist names.
+        Dict mapping artist name (lowercase) to a sub-dict of
+        {similar_artist_name (lowercase): match_score (0.0-1.0)}.
+        Match scores let the similarity engine weight the Last.fm
+        bonus by edge confidence rather than treating every link the
+        same.
     """
-    similar_data: dict[str, list[str]] = {}
+    similar_data: dict[str, dict[str, float]] = {}
 
     if not cache_dir.exists():
         logger.warning("Cache directory does not exist: %s", cache_dir)
@@ -96,9 +134,23 @@ def load_similar_artist_cache(cache_dir: Path) -> dict[str, list[str]]:
             with open(path) as f:
                 data = json.load(f)
             artist = data.get("artist", "").lower()
-            similar = [s["name"] for s in data.get("similar", [])]
-            if artist:
-                similar_data[artist] = similar
+            if not artist:
+                continue
+            edges: dict[str, float] = {}
+            for entry in data.get("similar", []):
+                name = entry.get("name", "")
+                if not name:
+                    continue
+                try:
+                    match = float(entry.get("match", 0.0))
+                except (TypeError, ValueError):
+                    match = 0.0
+                key = name.lower()
+                # Same target sometimes appears twice with different
+                # scores; keep the higher one.
+                if match > edges.get(key, 0.0):
+                    edges[key] = match
+            similar_data[artist] = edges
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning("Failed to load similar cache %s: %s", path.name, e)
 

@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 CATALOG_PATH = DATA_DIR / "catalog.csv"
 LASTFM_CACHE_DIR = DATA_DIR / "lastfm_cache"
+EMBEDDING_CACHE_PATH = DATA_DIR / "embeddings" / "artist_embeddings.npz"
 LOG_DIR = PROJECT_ROOT / "logs"
 
 # ---------------------------------------------------------------------------
@@ -59,6 +60,12 @@ LASTFM_RATE_LIMIT_SECONDS: float = 0.2
 RAG_MODEL: str = "gemini-3-flash-preview"
 RAG_MAX_TOKENS: int = 300
 
+# ---------------------------------------------------------------------------
+# Vertex AI text embeddings (for artist semantic similarity)
+# ---------------------------------------------------------------------------
+EMBEDDING_MODEL: str = "text-embedding-005"
+EMBEDDING_DIM: int = 768
+
 
 def load_env() -> None:
     """Load environment variables from the project .env file."""
@@ -92,3 +99,5 @@ def get_google_api_key() -> str:
             "Get a key at https://aistudio.google.com/apikey"
         )
     return key
+
+

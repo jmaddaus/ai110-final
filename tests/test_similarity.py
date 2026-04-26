@@ -124,6 +124,31 @@ def test_tag_similarity_case_insensitive():
     assert compute_tag_similarity(["Rock", "BLUES"], ["rock", "blues"]) == 1.0
 
 
+def test_tag_similarity_idf_weights_rare_tags_higher():
+    """A shared rare tag should produce a higher score than a shared common tag."""
+    idf = {"rock": 0.1, "shoegaze": 5.0, "indie": 1.0, "pop": 0.1}
+    rare_overlap = compute_tag_similarity(
+        ["shoegaze", "indie"], ["shoegaze", "pop"], idf
+    )
+    common_overlap = compute_tag_similarity(
+        ["rock", "indie"], ["rock", "pop"], idf
+    )
+    assert rare_overlap > common_overlap
+
+
+def test_tag_similarity_idf_falls_back_when_idf_is_none():
+    """idf=None should preserve plain-Jaccard behavior exactly."""
+    score = compute_tag_similarity(["rock", "blues"], ["blues", "jazz"], idf=None)
+    assert abs(score - 1 / 3) < 0.001
+
+
+def test_tag_similarity_idf_unknown_tag_gets_zero_weight():
+    """Tags missing from the idf dict contribute 0 to numerator and denominator."""
+    idf = {"rock": 1.0}  # 'blues' is unknown
+    # Intersection {rock} weight=1, union {rock, blues} weight=1, so result=1.0
+    assert compute_tag_similarity(["rock", "blues"], ["rock"], idf) == 1.0
+
+
 # --- compute_blended_score tests ---
 
 def test_blended_score_audio_only():
