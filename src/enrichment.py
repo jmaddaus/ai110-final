@@ -110,6 +110,48 @@ def load_instrument_cache(cache_dir: Path) -> dict[str, list[str]]:
     return instrument_data
 
 
+def load_track_tag_cache(cache_dir: Path) -> dict[tuple[str, str], list[str]]:
+    """Load all cached Last.fm track-level tags.
+
+    Track tags describe a specific song (eg. 'ballad', 'guitar riff',
+    'epic'), in contrast to artist tags which describe the whole
+    catalog. They are the song-level signal the engine has been
+    missing.
+
+    Args:
+        cache_dir: Path to the Last.fm cache directory.
+
+    Returns:
+        Dict mapping (artist_lower, track_name_lower) to list of tags.
+        Tracks with empty tag lists are skipped.
+    """
+    track_tag_data: dict[tuple[str, str], list[str]] = {}
+    if not cache_dir.exists():
+        logger.warning("Cache directory does not exist: %s", cache_dir)
+        return track_tag_data
+
+    cached = 0
+    for path in cache_dir.glob("track_tags_*.json"):
+        cached += 1
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            artist = (data.get("artist") or "").lower()
+            track = (data.get("track") or "").lower()
+            tags = data.get("tags") or []
+            if artist and track and tags:
+                track_tag_data[(artist, track)] = tags
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning("Failed to load track-tag cache %s: %s", path.name, e)
+
+    logger.info(
+        "Loaded track tags for %d / %d cached tracks (%.1f%% had usable tags)",
+        len(track_tag_data), cached,
+        100 * len(track_tag_data) / cached if cached else 0,
+    )
+    return track_tag_data
+
+
 def load_similar_artist_cache(cache_dir: Path) -> dict[str, dict[str, float]]:
     """Load all cached similar-artist data, preserving Last.fm match scores.
 

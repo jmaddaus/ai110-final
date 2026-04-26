@@ -6,6 +6,7 @@ Caches responses as JSON files to avoid redundant API calls.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -13,6 +14,12 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+# macOS / common filesystem filename limit is 255 chars. Some tracks
+# in the catalog credit dozens of collaborators, which blows past
+# that limit when concatenated with the track name. Hash anything
+# longer to keep filenames safe; the prefix stays human-readable.
+MAX_CACHE_KEY_LEN = 200
 
 from src.config import (
     get_lastfm_api_key,
@@ -84,8 +91,17 @@ class LastFmClient:
             return None
 
     def _cache_key(self, method: str, identifier: str) -> str:
-        """Generate a filesystem-safe cache key."""
+        """Generate a filesystem-safe cache key.
+
+        Short identifiers keep their human-readable form (preserves
+        prior cache hits). Long ones (huge collab strings) get a
+        readable prefix plus a stable SHA1 suffix so the filename
+        stays under filesystem limits.
+        """
         safe_id = identifier.lower().replace(" ", "_").replace("/", "_")
+        if len(safe_id) > MAX_CACHE_KEY_LEN:
+            digest = hashlib.sha1(safe_id.encode("utf-8")).hexdigest()[:16]
+            safe_id = f"{safe_id[:80]}__{digest}"
         return f"{method}_{safe_id}"
 
     def _get_cached(self, cache_key: str) -> dict[str, Any] | None:

@@ -93,15 +93,15 @@ def load_data() -> pd.DataFrame | None:
 
 
 @st.cache_data
-def load_enrichment_data() -> tuple[dict, dict, dict, object, dict] | None:
+def load_enrichment_data() -> tuple[dict, dict, dict, object, dict, dict, dict] | None:
     """Load cached Last.fm, MusicBrainz, embedding, and tag-IDF data.
 
     Returns:
         Tuple of (tag_data, similar_data, instrument_data,
-        embedding_data, tag_idf), or None. Any individual entry may
-        be empty if its specific cache is missing. embedding_data is a
-        (matrix, name_index) tuple or None. tag_idf is computed from
-        tag_data at load time.
+        embedding_data, tag_idf, track_tag_data, track_tag_idf), or
+        None. Any individual entry may be empty if its specific cache
+        is missing. embedding_data is a (matrix, name_index) tuple or
+        None. The IDF dicts are computed at load time.
     """
     if not LASTFM_CACHE_DIR.exists() or not any(LASTFM_CACHE_DIR.iterdir()):
         return None
@@ -112,6 +112,7 @@ def load_enrichment_data() -> tuple[dict, dict, dict, object, dict] | None:
         load_instrument_cache,
         load_similar_artist_cache,
         load_tag_cache,
+        load_track_tag_cache,
     )
     from src.musicbrainz_client import MUSICBRAINZ_CACHE_DIR
     tag_data = load_tag_cache(LASTFM_CACHE_DIR)
@@ -119,11 +120,17 @@ def load_enrichment_data() -> tuple[dict, dict, dict, object, dict] | None:
     instrument_data = load_instrument_cache(MUSICBRAINZ_CACHE_DIR)
     embedding_data = load_embedding_cache(EMBEDDING_CACHE_PATH)
     tag_idf = compute_tag_idf(tag_data)
+    track_tag_data = load_track_tag_cache(LASTFM_CACHE_DIR)
+    # Reuse compute_tag_idf: it only iterates values(), keys ignored.
+    track_tag_idf = compute_tag_idf(track_tag_data) if track_tag_data else {}
 
     if not tag_data and not similar_data:
         return None
 
-    return tag_data, similar_data, instrument_data, embedding_data, tag_idf
+    return (
+        tag_data, similar_data, instrument_data, embedding_data,
+        tag_idf, track_tag_data, track_tag_idf,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -352,11 +359,16 @@ def main() -> None:
     # Load enrichment data (optional)
     enrichment = load_enrichment_data()
     if enrichment:
-        tag_data, similar_data, instrument_data, embedding_data, tag_idf = enrichment
+        (
+            tag_data, similar_data, instrument_data, embedding_data,
+            tag_idf, track_tag_data, track_tag_idf,
+        ) = enrichment
     else:
         tag_data = similar_data = instrument_data = None
         embedding_data = None
         tag_idf = None
+        track_tag_data = None
+        track_tag_idf = None
         st.sidebar.info("Last.fm data not loaded. Showing audio-only results.")
 
     # Sidebar controls
@@ -378,6 +390,8 @@ def main() -> None:
                     instrument_data=instrument_data,
                     embedding_data=embedding_data,
                     tag_idf=tag_idf,
+                    track_tag_data=track_tag_data,
+                    track_tag_idf=track_tag_idf,
                     audio_weight=settings["audio_weight"],
                     tag_weight=settings["tag_weight"],
                     top_k=settings["top_k"],

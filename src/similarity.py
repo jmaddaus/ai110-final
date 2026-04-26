@@ -71,6 +71,33 @@ def _lookup_artist_data(artist_string: str, data: dict[str, list[str]] | None) -
     return combined
 
 
+def _lookup_track_tags(
+    artist_string: str,
+    track_name: str,
+    data: dict[tuple[str, str], list[str]] | None,
+) -> list[str]:
+    """Look up track-level tags for a (artist, track) pair.
+
+    Tries the full artist string first. Falls back to each
+    ';'-separated part so collab tracks like "Pritam;Arijit Singh"
+    still resolve when only one part is in the cache.
+    """
+    if not data or not artist_string or not track_name:
+        return []
+    track_lower = track_name.lower()
+    full = artist_string.lower()
+    direct = data.get((full, track_lower))
+    if direct:
+        return direct
+    for part in full.split(";"):
+        part = part.strip()
+        if part:
+            hit = data.get((part, track_lower))
+            if hit:
+                return hit
+    return []
+
+
 def _lookup_match_data(
     artist_string: str,
     data: dict[str, dict[str, float]] | None,
@@ -287,6 +314,8 @@ def find_similar(
     instrument_data: dict[str, list[str]] | None = None,
     embedding_data: tuple[np.ndarray, dict[str, int]] | None = None,
     tag_idf: dict[str, float] | None = None,
+    track_tag_data: dict[tuple[str, str], list[str]] | None = None,
+    track_tag_idf: dict[str, float] | None = None,
     audio_weight: float = 0.7,
     tag_weight: float = 0.3,
     top_k: int = 10,
@@ -352,6 +381,8 @@ def find_similar(
     seed_artist_lower = seed_artist_raw.lower()
     seed_artist_parts = {p.strip() for p in seed_artist_lower.split(";") if p.strip()}
     seed_tags = _lookup_artist_data(seed_artist_raw, tag_data)
+    seed_track_name = str(seed_row.get("track_name", "") or "")
+    seed_track_tags = _lookup_track_tags(seed_artist_raw, seed_track_name, track_tag_data)
     seed_match_map = _lookup_match_data(seed_artist_raw, lastfm_similar)
     seed_instruments = _lookup_artist_data(seed_artist_raw, instrument_data)
     seed_popularity = float(seed_row.get("popularity", 0) or 0)
@@ -381,13 +412,30 @@ def find_similar(
             continue
 
         candidate_tags = _lookup_artist_data(candidate_artist_raw, tag_data)
-
-        # Tag similarity. IDF-weighted when a tag_idf dict is provided
-        # so shared rare tags carry more weight than shared common ones.
-        tag_score = (
-            compute_tag_similarity(seed_tags, candidate_tags, tag_idf)
-            if (seed_tags or candidate_tags) else None
+        candidate_track_name = str(
+            df.iloc[result["index"]].get("track_name", "") or ""
         )
+        candidate_track_tags = _lookup_track_tags(
+            candidate_artist_raw, candidate_track_name, track_tag_data,
+        )
+
+        # Tag similarity. Prefer track-level tags when both seed and
+        # candidate have them: those describe the SONG (eg 'ballad',
+        # 'guitar riff') which is what the user is actually trying to
+        # match. Fall back to artist-level tags otherwise. IDF-weighted
+        # in either case so shared rare tags carry more weight than
+        # shared common ones.
+        if seed_track_tags and candidate_track_tags:
+            tag_score = compute_tag_similarity(
+                seed_track_tags, candidate_track_tags, track_tag_idf,
+            )
+            tag_layer = "track"
+        elif seed_tags or candidate_tags:
+            tag_score = compute_tag_similarity(seed_tags, candidate_tags, tag_idf)
+            tag_layer = "artist"
+        else:
+            tag_score = None
+            tag_layer = None
 
         # Last.fm corroboration is bidirectional: candidate listed as
         # similar to the seed, OR the seed listed as similar to the
@@ -506,12 +554,23 @@ def find_similar(
                 + embedding_modifier,
             )
 
-        # Shared tags
-        shared_tags = sorted(set(t.lower() for t in seed_tags) & set(t.lower() for t in candidate_tags))
+        # Shared tags: surface whichever layer the score used so the UI
+        # explanation matches the score driver.
+        if tag_layer == "track":
+            shared_tags = sorted(
+                {t.lower() for t in seed_track_tags}
+                & {t.lower() for t in candidate_track_tags}
+            )
+        else:
+            shared_tags = sorted(
+                {t.lower() for t in seed_tags}
+                & {t.lower() for t in candidate_tags}
+            )
 
         result.update({
             "blended_score": blended,
             "tag_score": tag_score,
+            "tag_layer": tag_layer,
             "lastfm_confirms": lastfm_confirms,
             "lastfm_match": best_match,
             "shared_tags": shared_tags,
