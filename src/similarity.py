@@ -16,6 +16,112 @@ from src.config import AUDIO_FEATURES, DEFAULT_FEATURE_WEIGHTS
 
 logger = logging.getLogger(__name__)
 
+AUDIO_CANDIDATE_POOL_SIZE = 5000
+DEFAULT_MAX_PER_ARTIST = 2
+
+
+def _diversify(results: list[dict], top_k: int, max_per_artist: int) -> list[dict]:
+    """Greedy pass that caps each artist to max_per_artist in the top_k.
+
+    Walks the pre-sorted results, keeping a result unless that artist
+    already has max_per_artist picks. If the cap leaves us short of
+    top_k, we backfill with the skipped results in their original order.
+    """
+    if max_per_artist <= 0:
+        return results[:top_k]
+    kept: list[dict] = []
+    skipped: list[dict] = []
+    counts: dict[str, int] = {}
+    for r in results:
+        key = r["artist"].lower()
+        if counts.get(key, 0) < max_per_artist:
+            kept.append(r)
+            counts[key] = counts.get(key, 0) + 1
+            if len(kept) >= top_k:
+                break
+        else:
+            skipped.append(r)
+    if len(kept) < top_k:
+        kept.extend(skipped[: top_k - len(kept)])
+    return kept
+
+
+def _lookup_artist_data(artist_string: str, data: dict[str, list[str]] | None) -> list[str]:
+    """Look up tag or instrument data (list-of-strings shape) for an artist string.
+
+    Catalog rows use "A;B;C" for collaborations. The Last.fm cache keys
+    individual artists. This tries the full string first, then falls back
+    to splitting on ';' and unioning data from any parts that are cached.
+    """
+    if not data or not artist_string:
+        return []
+    full = artist_string.lower()
+    if full in data:
+        return data[full]
+    combined: list[str] = []
+    seen: set[str] = set()
+    for part in full.split(";"):
+        part = part.strip()
+        if part and part in data:
+            for item in data[part]:
+                key = item.lower() if isinstance(item, str) else str(item).lower()
+                if key not in seen:
+                    seen.add(key)
+                    combined.append(item)
+    return combined
+
+
+def _lookup_track_tags(
+    artist_string: str,
+    track_name: str,
+    data: dict[tuple[str, str], list[str]] | None,
+) -> list[str]:
+    """Look up track-level tags for a (artist, track) pair.
+
+    Tries the full artist string first. Falls back to each
+    ';'-separated part so collab tracks like "Pritam;Arijit Singh"
+    still resolve when only one part is in the cache.
+    """
+    if not data or not artist_string or not track_name:
+        return []
+    track_lower = track_name.lower()
+    full = artist_string.lower()
+    direct = data.get((full, track_lower))
+    if direct:
+        return direct
+    for part in full.split(";"):
+        part = part.strip()
+        if part:
+            hit = data.get((part, track_lower))
+            if hit:
+                return hit
+    return []
+
+
+def _lookup_match_data(
+    artist_string: str,
+    data: dict[str, dict[str, float]] | None,
+) -> dict[str, float]:
+    """Look up similar-artist match-score data for an artist string.
+
+    Same collab-handling as _lookup_artist_data, but for the
+    {target: match_score} shape. When a collab string aggregates
+    multiple parts, keep the maximum match for each target.
+    """
+    if not data or not artist_string:
+        return {}
+    full = artist_string.lower()
+    if full in data:
+        return data[full]
+    merged: dict[str, float] = {}
+    for part in full.split(";"):
+        part = part.strip()
+        if part and part in data:
+            for target, score in data[part].items():
+                if score > merged.get(target, 0.0):
+                    merged[target] = score
+    return merged
+
 
 def build_feature_matrix(
     df: pd.DataFrame,
@@ -75,29 +181,44 @@ def find_similar_by_audio(
     results = []
     for idx in top_indices:
         row = df.iloc[idx]
+        # Coerce to string defensively; pandas may return NaN (float)
+        # for missing values, which breaks downstream .lower() calls.
+        artist = row.get("artist", "")
+        track_name = row.get("track_name", "")
+        genre = row.get("genre", "")
         results.append({
             "index": int(idx),
-            "track_name": row.get("track_name", ""),
-            "artist": row.get("artist", ""),
-            "genre": row.get("genre", ""),
+            "track_name": str(track_name) if pd.notna(track_name) else "",
+            "artist": str(artist) if pd.notna(artist) else "",
+            "genre": str(genre) if pd.notna(genre) else "",
             "audio_score": float(similarities[idx]),
         })
 
     return results
 
 
-def compute_tag_similarity(tags_a: list[str], tags_b: list[str]) -> float:
+def compute_tag_similarity(
+    tags_a: list[str],
+    tags_b: list[str],
+    idf: dict[str, float] | None = None,
+) -> float:
     """Jaccard similarity between two tag lists.
+
+    When an IDF dict is supplied, returns IDF-weighted Jaccard so that
+    shared rare tags ("shoegaze", "vaporwave") count more than shared
+    common tags ("rock", "pop"). When idf is None, falls back to plain
+    set-based Jaccard.
 
     Args:
         tags_a: List of tags for artist/track A.
         tags_b: List of tags for artist/track B.
+        idf: Optional dict mapping tag (lowercase) to IDF weight.
 
     Returns:
         Float between 0.0 and 1.0. Returns 0.0 if both lists are empty.
     """
-    set_a = set(t.lower() for t in tags_a)
-    set_b = set(t.lower() for t in tags_b)
+    set_a = {t.lower() for t in tags_a}
+    set_b = {t.lower() for t in tags_b}
 
     if not set_a and not set_b:
         return 0.0
@@ -105,7 +226,14 @@ def compute_tag_similarity(tags_a: list[str], tags_b: list[str]) -> float:
     intersection = set_a & set_b
     union = set_a | set_b
 
-    return len(intersection) / len(union)
+    if idf:
+        weight_intersection = sum(idf.get(t, 0.0) for t in intersection)
+        weight_union = sum(idf.get(t, 0.0) for t in union)
+        if weight_union == 0.0:
+            return 0.0
+        return weight_intersection / weight_union
+
+    return len(intersection) / len(union) if union else 0.0
 
 
 def compute_blended_score(
@@ -153,13 +281,19 @@ def compute_confidence(
     """
     signals = 0
 
-    if audio_score >= 0.7:
+    # Audio alone is a weak discriminator on this catalog (most results
+    # come back at 0.95+), so we only count it when the seed and candidate
+    # are essentially identical sonically.
+    if audio_score >= 0.9:
         signals += 1
-    if tag_score is not None and tag_score >= 0.3:
+    # Jaccard on small tag sets is noisy; 0.15 is a more realistic
+    # threshold than 0.3 for "these artists share a meaningful portion
+    # of their community framing".
+    if tag_score is not None and tag_score >= 0.15:
         signals += 1
     if lastfm_confirms:
         signals += 1
-    if score_margin >= 0.05:
+    if score_margin >= 0.03:
         signals += 1
 
     if signals >= 3:
@@ -176,10 +310,19 @@ def find_similar(
     feature_columns: list[str] | None = None,
     weights: dict[str, float] | None = None,
     tag_data: dict[str, list[str]] | None = None,
-    lastfm_similar: dict[str, list[str]] | None = None,
+    lastfm_similar: dict[str, dict[str, float]] | None = None,
+    instrument_data: dict[str, list[str]] | None = None,
+    embedding_data: tuple[np.ndarray, dict[str, int]] | None = None,
+    tag_idf: dict[str, float] | None = None,
+    track_tag_data: dict[tuple[str, str], list[str]] | None = None,
+    track_tag_idf: dict[str, float] | None = None,
     audio_weight: float = 0.7,
     tag_weight: float = 0.3,
     top_k: int = 10,
+    max_per_artist: int = DEFAULT_MAX_PER_ARTIST,
+    include_low_confidence: bool = True,
+    exclude_seed_artist: bool = True,
+    mode: str = "default",
 ) -> list[dict]:
     """Top-level similarity search combining all signals.
 
@@ -203,9 +346,10 @@ def find_similar(
     """
     feature_columns = feature_columns or AUDIO_FEATURES
 
-    # Resolve seed index
-    if isinstance(seed_track, int):
-        seed_index = seed_track
+    # Resolve seed index. Accept numpy integer types too, since pandas
+    # row labels come back as numpy.int64 and fail isinstance(..., int).
+    if isinstance(seed_track, (int, np.integer)):
+        seed_index = int(seed_track)
     else:
         matches = df[df["track_name"].str.lower() == seed_track.strip().lower()]
         if matches.empty:
@@ -219,53 +363,228 @@ def find_similar(
         df.iloc[seed_index].get("artist", "?"),
     )
 
-    # Build feature matrix and get audio-based results
+    # Build feature matrix and pull a wide audio pool so the tag layer
+    # has real candidates to rerank. If the pool is tiny, audio alone
+    # decides the result set and the tag signal is wasted. Discovery
+    # mode pulls an even wider pool because we are explicitly looking
+    # for non-canon outliers that live in the long tail of audio
+    # neighbors, not just the top of the cosine list.
     feature_matrix = build_feature_matrix(df, feature_columns, weights)
-    audio_results = find_similar_by_audio(seed_index, feature_matrix, df, top_k=top_k * 2)
+    if mode == "discovery":
+        pool_size = max(top_k * 4, AUDIO_CANDIDATE_POOL_SIZE * 4)
+    else:
+        pool_size = max(top_k * 2, AUDIO_CANDIDATE_POOL_SIZE)
+    audio_results = find_similar_by_audio(seed_index, feature_matrix, df, top_k=pool_size)
 
-    seed_artist = str(df.iloc[seed_index].get("artist", "")).lower()
-    seed_tags = (tag_data or {}).get(seed_artist, [])
-    seed_similar = (lastfm_similar or {}).get(seed_artist, [])
-    seed_similar_lower = [a.lower() for a in seed_similar]
+    seed_row = df.iloc[seed_index]
+    seed_artist_raw = str(seed_row.get("artist", ""))
+    seed_artist_lower = seed_artist_raw.lower()
+    seed_artist_parts = {p.strip() for p in seed_artist_lower.split(";") if p.strip()}
+    seed_tags = _lookup_artist_data(seed_artist_raw, tag_data)
+    seed_track_name = str(seed_row.get("track_name", "") or "")
+    seed_track_tags = _lookup_track_tags(seed_artist_raw, seed_track_name, track_tag_data)
+    seed_match_map = _lookup_match_data(seed_artist_raw, lastfm_similar)
+    seed_instruments = _lookup_artist_data(seed_artist_raw, instrument_data)
+    seed_popularity = float(seed_row.get("popularity", 0) or 0)
+
+    # Resolve a seed embedding vector. Tries the full artist string
+    # first, then any '-separated parts so collaborations match too.
+    seed_embedding: np.ndarray | None = None
+    if embedding_data is not None:
+        emb_matrix, emb_index = embedding_data
+        for candidate_key in [seed_artist_lower, *seed_artist_parts]:
+            row_idx = emb_index.get(candidate_key)
+            if row_idx is not None:
+                seed_embedding = emb_matrix[row_idx]
+                break
 
     # Enrich each result with tag similarity and confidence
     enriched = []
     for result in audio_results:
-        candidate_artist = result["artist"].lower()
-        candidate_tags = (tag_data or {}).get(candidate_artist, [])
+        candidate_artist_raw = result["artist"]
+        candidate_artist = candidate_artist_raw.lower()
+        candidate_parts = {p.strip() for p in candidate_artist.split(";") if p.strip()}
 
-        # Tag similarity
-        tag_score = compute_tag_similarity(seed_tags, candidate_tags) if (seed_tags or candidate_tags) else None
+        # Skip same-artist tracks when exclude_seed_artist is on. Compare
+        # on any overlap between candidate and seed parts so "Pritam" still
+        # matches "Pritam;Arijit Singh".
+        if exclude_seed_artist and seed_artist_parts & candidate_parts:
+            continue
 
-        # Last.fm corroboration
-        lastfm_confirms = candidate_artist in seed_similar_lower
+        candidate_tags = _lookup_artist_data(candidate_artist_raw, tag_data)
+        candidate_track_name = str(
+            df.iloc[result["index"]].get("track_name", "") or ""
+        )
+        candidate_track_tags = _lookup_track_tags(
+            candidate_artist_raw, candidate_track_name, track_tag_data,
+        )
 
-        # Last.fm bonus
-        lastfm_bonus = 0.05 if lastfm_confirms else 0.0
+        # Tag similarity. Prefer track-level tags when both seed and
+        # candidate have them: those describe the SONG (eg 'ballad',
+        # 'guitar riff') which is what the user is actually trying to
+        # match. Fall back to artist-level tags otherwise. IDF-weighted
+        # in either case so shared rare tags carry more weight than
+        # shared common ones.
+        if seed_track_tags and candidate_track_tags:
+            tag_score = compute_tag_similarity(
+                seed_track_tags, candidate_track_tags, track_tag_idf,
+            )
+            tag_layer = "track"
+        elif seed_tags or candidate_tags:
+            tag_score = compute_tag_similarity(seed_tags, candidate_tags, tag_idf)
+            tag_layer = "artist"
+        else:
+            tag_score = None
+            tag_layer = None
+
+        # Last.fm corroboration is bidirectional: candidate listed as
+        # similar to the seed, OR the seed listed as similar to the
+        # candidate. Catches cases like GVF whose similar list includes
+        # Led Zeppelin even though LZ's does not include them. The
+        # bonus is scaled by the actual match score (0-1) so a 1.0
+        # edge gets the full bonus and weak 0.2 edges get a much
+        # smaller nudge.
+        seed_to_cand_match = max(
+            (seed_match_map.get(p, 0.0) for p in candidate_parts),
+            default=0.0,
+        )
+        cand_match_map = _lookup_match_data(candidate_artist_raw, lastfm_similar)
+        cand_to_seed_match = max(
+            (cand_match_map.get(p, 0.0) for p in seed_artist_parts),
+            default=0.0,
+        )
+        best_match = max(seed_to_cand_match, cand_to_seed_match)
+        lastfm_confirms = best_match > 0.0
+        lastfm_bonus = best_match * 0.05
+
+        # Instrument fingerprint comparison. Only meaningful when both
+        # artists have structured member data. Very different band
+        # compositions (eg rock band vs dixieland ensemble) get a
+        # penalty; strong overlap gets a small bonus.
+        candidate_instruments = _lookup_artist_data(candidate_artist_raw, instrument_data)
+        if seed_instruments and candidate_instruments:
+            instrument_score = compute_tag_similarity(seed_instruments, candidate_instruments)
+        else:
+            instrument_score = None
+
+        instrument_modifier = 0.0
+        if instrument_score is not None:
+            if instrument_score < 0.15:
+                instrument_modifier = -0.15
+            elif instrument_score >= 0.5:
+                instrument_modifier = 0.05
+
+        # Popularity bucket. Mainstream seeds (popularity ~70+) should
+        # not surface 4-listener long-tail tracks that happen to share
+        # an audio vector, and obscure seeds should not jump to chart
+        # toppers. Popularity column is 0-100, already in the catalog.
+        candidate_row = df.iloc[result["index"]]
+        candidate_popularity = float(candidate_row.get("popularity", 0) or 0)
+        popularity_gap = abs(seed_popularity - candidate_popularity)
+        popularity_modifier = -min((popularity_gap / 30.0) * 0.025, 0.05)
+
+        # Embedding similarity. Single dense cosine over a 768-dim
+        # artist representation built from tags + similar-artist names.
+        # Captures synonym tags and semantic distance that Jaccard
+        # cannot. Embeddings are pre-normalised so cosine = dot.
+        embedding_score = None
+        embedding_modifier = 0.0
+        if seed_embedding is not None and embedding_data is not None:
+            emb_matrix, emb_index = embedding_data
+            cand_row_idx = None
+            for candidate_key in [candidate_artist, *candidate_parts]:
+                cand_row_idx = emb_index.get(candidate_key)
+                if cand_row_idx is not None:
+                    break
+            if cand_row_idx is not None:
+                cand_embedding = emb_matrix[cand_row_idx]
+                embedding_score = float(np.dot(seed_embedding, cand_embedding))
+                if embedding_score >= 0.85:
+                    embedding_modifier = 0.05
+                elif embedding_score >= 0.7:
+                    embedding_modifier = 0.02
+                elif embedding_score < 0.4:
+                    embedding_modifier = -0.05
 
         # Blended score
         effective_tag_score = tag_score if tag_score is not None else 0.0
-        blended = compute_blended_score(
-            result["audio_score"], effective_tag_score,
-            audio_weight, tag_weight, lastfm_bonus,
-        )
+        if mode == "discovery":
+            # Discovery mode wants sonic siblings that live OUTSIDE
+            # the seed's canonical neighborhood. Not "another Doors
+            # track" (high embedding similarity = canon) but also not
+            # a random track that just happens to share the same nine
+            # feature shape (very low embedding = unrelated scene).
+            # The sweet spot is mid-range embedding cosine: close
+            # enough to feel related, far enough to feel novel.
+            #
+            # We also drop near-duplicate audio matches (cosine > 0.97)
+            # because they tend to be tracks that share the seed's
+            # AVERAGE audio shape rather than its distinctive sound.
+            # Candidates without an embedding are skipped: we can't
+            # judge their canonicality, so they would otherwise
+            # dominate by default.
+            if embedding_score is None:
+                continue
+            if result["audio_score"] > 0.97 or result["audio_score"] < 0.80:
+                continue
+            # Popularity floor. Below 10 is usually long-tail catalog
+            # noise: a 1-track artist nobody is searching for. The
+            # obscurity bonus would otherwise drag these to the top
+            # just because popularity=0 maxes out the bonus.
+            if candidate_popularity < 10:
+                continue
+            if 0.45 <= embedding_score <= 0.65:
+                canon_modifier = 0.10  # the discovery sweet spot
+            elif embedding_score > 0.75:
+                canon_modifier = -0.20  # too canonical
+            elif embedding_score < 0.35:
+                canon_modifier = -0.10  # too unrelated
+            else:
+                canon_modifier = 0.0
+            obscurity_bonus = (1.0 - candidate_popularity / 100.0) * 0.05
+            blended = max(
+                0.0,
+                min(1.0, result["audio_score"] + canon_modifier + obscurity_bonus),
+            )
+        else:
+            blended = compute_blended_score(
+                result["audio_score"], effective_tag_score,
+                audio_weight, tag_weight,
+                lastfm_bonus + instrument_modifier + popularity_modifier
+                + embedding_modifier,
+            )
 
-        # Shared tags
-        shared_tags = sorted(set(t.lower() for t in seed_tags) & set(t.lower() for t in candidate_tags))
+        # Shared tags: surface whichever layer the score used so the UI
+        # explanation matches the score driver.
+        if tag_layer == "track":
+            shared_tags = sorted(
+                {t.lower() for t in seed_track_tags}
+                & {t.lower() for t in candidate_track_tags}
+            )
+        else:
+            shared_tags = sorted(
+                {t.lower() for t in seed_tags}
+                & {t.lower() for t in candidate_tags}
+            )
 
         result.update({
             "blended_score": blended,
             "tag_score": tag_score,
+            "tag_layer": tag_layer,
             "lastfm_confirms": lastfm_confirms,
+            "lastfm_match": best_match,
             "shared_tags": shared_tags,
+            "instrument_score": instrument_score,
+            "popularity_gap": popularity_gap,
+            "embedding_score": embedding_score,
         })
         enriched.append(result)
 
-    # Sort by blended score and take top_k
+    # Sort the full pool, then rate confidence using the margin to the next
+    # entry in the full list (not the post-diversify slice). That way a
+    # confidence rating does not flip just because diversification removed
+    # the neighbor it was being compared against.
     enriched.sort(key=lambda r: r["blended_score"], reverse=True)
-    enriched = enriched[:top_k]
-
-    # Add confidence (needs score margin from sorted list)
     for i, result in enumerate(enriched):
         next_score = enriched[i + 1]["blended_score"] if i + 1 < len(enriched) else 0.0
         margin = result["blended_score"] - next_score
@@ -274,4 +593,7 @@ def find_similar(
             result["lastfm_confirms"], margin,
         )
 
-    return enriched
+    if not include_low_confidence:
+        enriched = [r for r in enriched if r["confidence"] != "low"]
+
+    return _diversify(enriched, top_k, max_per_artist)

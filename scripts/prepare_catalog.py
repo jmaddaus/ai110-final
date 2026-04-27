@@ -16,11 +16,34 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
 
 import pandas as pd
 
 from src.config import AUDIO_FEATURES, DATA_DIR
+
+# Matches remaster/mono/stereo/year-mix suffixes that Spotify appends to
+# multiple versions of the same underlying recording, so we can collapse
+# "Love Me Do - Mono / Remastered" and "Love Me Do - Remastered 2009"
+# into a single row.
+REMASTER_SUFFIX = re.compile(
+    r"""\s*[-–]\s*
+    (?:
+        (?:mono|stereo)?\s*/?\s*(?:\d{4}\s+)?remaster(?:ed)?(?:\s+\d{4})?
+      | \d{4}\s+mix
+      | (?:mono|stereo)(?:\s+version)?
+    )\s*$
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def normalize_track_name(name: str) -> str:
+    """Strip remaster / mono / stereo suffixes for dedup matching."""
+    if not isinstance(name, str):
+        return name
+    return REMASTER_SUFFIX.sub("", name).strip()
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +99,20 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def deduplicate(df: pd.DataFrame) -> pd.DataFrame:
-    """Remove duplicate tracks (same artist + track_name, keep most popular)."""
+    """Remove duplicate tracks, keeping the most popular variant.
+
+    Two rows count as duplicates when their artist and normalized
+    track_name match (case-insensitive, remaster/mono/stereo suffixes
+    stripped). This collapses multiple remaster versions of the same
+    underlying recording.
+    """
     before = len(df)
+    df = df.copy()
+    df["_artist_key"] = df["artist"].astype(str).str.lower().str.strip()
+    df["_track_key"] = df["track_name"].map(normalize_track_name).astype(str).str.lower().str.strip()
     df = df.sort_values("popularity", ascending=False)
-    df = df.drop_duplicates(subset=["artist", "track_name"], keep="first")
+    df = df.drop_duplicates(subset=["_artist_key", "_track_key"], keep="first")
+    df = df.drop(columns=["_artist_key", "_track_key"])
     dropped = before - len(df)
     if dropped:
         logger.info("Removed %d duplicate tracks", dropped)

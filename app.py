@@ -1,11 +1,13 @@
-"""Music Discovery Engine — Streamlit Web Application.
+"""Music Discovery Engine Streamlit Web Application.
 
 Entry point: streamlit run app.py
 
 Discover similar music across genre boundaries using cosine
-similarity on audio features, Last.fm tags, and Claude-powered
+similarity on audio features, Last.fm tags, and Gemini-powered
 explanations.
 """
+
+from __future__ import annotations
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -22,6 +24,7 @@ from src.config import (
     DEFAULT_AUDIO_WEIGHT,
     DEFAULT_TAG_WEIGHT,
     CATALOG_PATH,
+    EMBEDDING_CACHE_PATH,
     LASTFM_CACHE_DIR,
     LOG_DIR,
 )
@@ -90,23 +93,44 @@ def load_data() -> pd.DataFrame | None:
 
 
 @st.cache_data
-def load_enrichment_data() -> tuple[dict, dict] | None:
-    """Load cached Last.fm tag and similar-artist data.
+def load_enrichment_data() -> tuple[dict, dict, dict, object, dict, dict, dict] | None:
+    """Load cached Last.fm, MusicBrainz, embedding, and tag-IDF data.
 
     Returns:
-        Tuple of (tag_data, similar_data) dicts, or None if unavailable.
+        Tuple of (tag_data, similar_data, instrument_data,
+        embedding_data, tag_idf, track_tag_data, track_tag_idf), or
+        None. Any individual entry may be empty if its specific cache
+        is missing. embedding_data is a (matrix, name_index) tuple or
+        None. The IDF dicts are computed at load time.
     """
     if not LASTFM_CACHE_DIR.exists() or not any(LASTFM_CACHE_DIR.iterdir()):
         return None
 
-    from src.enrichment import load_tag_cache, load_similar_artist_cache
+    from src.embeddings import load_embedding_cache
+    from src.enrichment import (
+        compute_tag_idf,
+        load_instrument_cache,
+        load_similar_artist_cache,
+        load_tag_cache,
+        load_track_tag_cache,
+    )
+    from src.musicbrainz_client import MUSICBRAINZ_CACHE_DIR
     tag_data = load_tag_cache(LASTFM_CACHE_DIR)
     similar_data = load_similar_artist_cache(LASTFM_CACHE_DIR)
+    instrument_data = load_instrument_cache(MUSICBRAINZ_CACHE_DIR)
+    embedding_data = load_embedding_cache(EMBEDDING_CACHE_PATH)
+    tag_idf = compute_tag_idf(tag_data)
+    track_tag_data = load_track_tag_cache(LASTFM_CACHE_DIR)
+    # Reuse compute_tag_idf: it only iterates values(), keys ignored.
+    track_tag_idf = compute_tag_idf(track_tag_data) if track_tag_data else {}
 
     if not tag_data and not similar_data:
         return None
 
-    return tag_data, similar_data
+    return (
+        tag_data, similar_data, instrument_data, embedding_data,
+        tag_idf, track_tag_data, track_tag_idf,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -140,14 +164,41 @@ def render_sidebar() -> dict:
     )
     tag_weight = 1.0 - audio_weight
 
+    st.sidebar.subheader("Mode")
+    mode_label = st.sidebar.radio(
+        "Discovery mode",
+        ["Default (canonical)", "Discovery (non-obvious)"],
+        index=0,
+        help=(
+            "Default rewards canonical neighbors (same scene, same era). "
+            "Discovery flips that: audio similarity is still primary, but "
+            "tracks in the same canon as the seed are penalised and "
+            "less-popular candidates get a bump."
+        ),
+    )
+    mode = "discovery" if mode_label.startswith("Discovery") else "default"
+
     st.sidebar.subheader("Results")
     top_k = st.sidebar.slider("Number of results", min_value=5, max_value=25, value=10)
+    include_low_confidence = st.sidebar.checkbox(
+        "Include low-confidence matches",
+        value=False,
+        help="Off by default. Low-confidence picks usually mean weak audio + no tag data.",
+    )
+    exclude_seed_artist = st.sidebar.checkbox(
+        "Exclude the seed artist",
+        value=True,
+        help="On by default. Return other artists instead of more tracks by the one you seeded with.",
+    )
 
     return {
         "weights": weights,
         "audio_weight": audio_weight,
         "tag_weight": tag_weight,
         "top_k": top_k,
+        "include_low_confidence": include_low_confidence,
+        "exclude_seed_artist": exclude_seed_artist,
+        "mode": mode,
     }
 
 
@@ -307,9 +358,17 @@ def main() -> None:
 
     # Load enrichment data (optional)
     enrichment = load_enrichment_data()
-    tag_data, similar_data = enrichment if enrichment else (None, None)
-
-    if not enrichment:
+    if enrichment:
+        (
+            tag_data, similar_data, instrument_data, embedding_data,
+            tag_idf, track_tag_data, track_tag_idf,
+        ) = enrichment
+    else:
+        tag_data = similar_data = instrument_data = None
+        embedding_data = None
+        tag_idf = None
+        track_tag_data = None
+        track_tag_idf = None
         st.sidebar.info("Last.fm data not loaded. Showing audio-only results.")
 
     # Sidebar controls
@@ -328,9 +387,17 @@ def main() -> None:
                     weights=settings["weights"],
                     tag_data=tag_data,
                     lastfm_similar=similar_data,
+                    instrument_data=instrument_data,
+                    embedding_data=embedding_data,
+                    tag_idf=tag_idf,
+                    track_tag_data=track_tag_data,
+                    track_tag_idf=track_tag_idf,
                     audio_weight=settings["audio_weight"],
                     tag_weight=settings["tag_weight"],
                     top_k=settings["top_k"],
+                    include_low_confidence=settings["include_low_confidence"],
+                    exclude_seed_artist=settings["exclude_seed_artist"],
+                    mode=settings["mode"],
                 )
 
                 # Try to add RAG explanations
